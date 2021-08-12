@@ -3,6 +3,7 @@ import pandas as pd
 import datetime as dt
 import matplotlib.pyplot as plt
 from datetime import datetime
+import matplotlib as mpl
 
 
 twt = pd.read_csv("Tweet.csv")
@@ -39,17 +40,99 @@ len(twt['writer'].drop_duplicates())
 
 
 
-### 3. how many unique writers post tweets each day?
+### 3a. how many unique writers post tweets each day?
 
 #copying the original dataframe
-twt_u=twt.copy()
+twt_u=twt.rename(columns={'post_date':'post_datetime'})
 
 #converting the post date column from Unix time to datetime
-##twt_u['post_date']=twt_u['post_date'].apply(lambda x: datetime.utcfromtimestamp(x).strftime('%Y-%m-%d'))
+twt_u['post_datetime'] = dt.datetime(1970,1,1) + pd.to_timedelta(twt_u['post_datetime'],'s')
 
+#want to have 2 column for date. one with time, one with time set at equal time so only the date is considered.
+
+#twt_u['post_date'] = twt_u['post_date'].dt.date     this code change the datatype to str
 ###above code equivalent to 
-twt_u['post_date'] = dt.datetime(1970,1,1) + pd.to_timedelta(twt_u['post_date'],'s')
-twt_u['post_date'] = twt_u['post_date'].dt.date
+##twt_u['post_date']=twt_u['post_date'].apply(lambda x: datetime.utcfromtimestamp(x).strftime('%Y-%m-%d'))
+##same problem though. end datatype is str
+
+#performance testing between .replace and .normalize. both functions set time at midnight
+#start_time = time.time()
+twt_u['post_date'] = twt_u['post_datetime'].apply(lambda x: x.replace(hour=0, minute=0, second=0, microsecond=0))
+#print("--- %s seconds ---" % (time.time() - start_time))
+
+##start_time = time.time()
+##twt_u['post_date'] = twt_u['post_datetime'].apply(lambda x: x.normalize())
+##print("--- %s seconds ---" % (time.time() - start_time))
+# 24.7287 seconds (.replace) vs. 27.4480 seconds (.normalize)
+
+#pivotting 'writer' distinct counts by year and month
+twt_u_piv1=pd.pivot_table(twt_u, 
+                          index=twt_u['post_date'].dt.month, 
+                          columns=twt_u['post_date'].dt.year, 
+                          values='writer', 
+                          aggfunc=lambda x: len(x.unique()))
+twt_u_piv1.index.rename('Month', inplace=True)
+twt_u_piv1.columns.rename('Year', inplace=True)
+
+##plotting
+plot1=twt_u_piv1.plot(color=['#D6EAF8','#85C1E9','#3498DB','#2874A6','#C0392B'],
+                linewidth=2,
+                figsize=(20,12))
+plt.ylabel('Distinct Number of Writers', labelpad=15)
+plt.xlabel('Month', labelpad=15)
+plt.title('How Many Distinct Number of Writers Posted Tweets Each Month Over the Years?', 
+          fontdict={'size':25, 'weight':'bold'},
+          pad=20)
+plot1.yaxis.set_major_formatter(
+    mpl.ticker.StrMethodFormatter('{x:,.0f}')) #y axis number format include commas
+#plot1.figure
+
+### 3b. when do most tweets get published through the day over the years?
+
+#pivotting distinct count of tweets over hours of the day and years
+twt_u_piv2=pd.pivot_table(twt_u, 
+                          index=twt_u['post_datetime'].dt.hour, 
+                          columns=twt_u['post_datetime'].dt.year, 
+                          values='tweet_id', 
+                          aggfunc=lambda x: len(x.unique()))
+twt_u_piv2.index.rename('Month',inplace=True)#=['Month']
+twt_u_piv2.columns.rename('Year', inplace=True)
+
+##plotting
+plot2=twt_u_piv2.plot.bar(color=['#D6EAF8','#85C1E9','#3498DB','#2874A6','#C0392B'],
+                          figsize=(20,12),
+                          width=0.9)
+plt.ylabel('Distinct Number of Tweets', labelpad=15)
+plt.xlabel('Hour', labelpad=15)
+plt.title('Hourly Distribution of Tweet Counts Over the Years', 
+          fontdict={'size':25, 'weight':'bold'},
+          pad=20)
+plot2.yaxis.set_major_formatter(
+    mpl.ticker.StrMethodFormatter('{x:,.0f}')) #y axis number format include commas
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#########################Note#########################
+
+twt_u_piv1.reset_index()
+
+
+
+
+
 
 #distinct counting writer per day
 twt_u['distinct_user_count']=twt_u.groupby('post_date')['writer'].transform('nunique')
