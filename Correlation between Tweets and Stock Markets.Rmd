@@ -17,7 +17,8 @@ knitr::opts_chunk$set(echo = TRUE)
 #### Used Packages
 
 ```{r message=FALSE, warning=FALSE}
-library(dplyr)
+library(easypackages)
+libraries("dplyr","janitor")
 ```
 ```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
 mymachine="/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
@@ -53,12 +54,28 @@ paste("number of NA in ticker_symbol =", sum(is.na(twt_to_cmpy$ticker_symbol)))
 
 This data set contains two columns. 
 And based on the setup, it seems to show which tweet posts are affecting which company.
+There isn't much cleaning to do on this data, but it seems like there are duplicated tweet_id. (distinct number of tweets less than the total row).
+Does this mean tweets can be related to more than one company at a time?
+Let's find out.
+```{r}
+tmp<- twt_to_cmpy%>%
+  group_by(tweet_id) %>%
+  summarize(Referred_Company_Count_per_Tweet=n_distinct(ticker_symbol)) %>%
+  count(Referred_Company_Count_per_Tweet) %>%
+  rename(n_occurrence=n)
+print(tmp)
+paste("correct row number =", sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence))
+```
+According to the above result, the data set should have `r sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence)` rows while the table actually has `r nrow(twt_to_cmpy)`.
+This means some rows are duplicated and that needs to be eliminated.
 
 ```{r}
-twt_to_cmpy%>%
-  group_by(tweet_id) %>%
-  summarize(Referred_Company_Count=n_distinct(ticker_symbol)) %>%
-  count(Referred_Company_Count)
+twt_to_cmpy<-unique(twt_to_cmpy)
+nrow(twt_to_cmpy)
+```
+
+
+```{r}
   #group_by(Referred_Company_Count) %>%
   #summarize(n_occurrence=count(Referred_Company_Count))
   #arrange(desc(Referred_Company_Count)) %>% #sort(Referred_Company_Count, decreasing=TRUE) %>%
