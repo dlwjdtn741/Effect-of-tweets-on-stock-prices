@@ -1,0 +1,75 @@
+---
+title: "Correlation between Tweets and Stock Markets"
+author: "Amy Lee"
+date: "8/13/2021"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#knitr::knit_hooks$set(document = function(x){
+#  gsub("```\n*```r*\n*", "", x)
+#})
+```
+
+#### Used Packages
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+```
+```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
+mymachine="/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
+```
+
+# Introduction
+
+While I was looking for an interesting project to work on, I came across a Kaggle post called"Tweets about the Top Companies from 2015 and 2020".
+(link : https://www.kaggle.com/omermetinn/tweets-about-the-top-companies-from-2015-to-2020)
+
+It includes three datasets.
+  
+```{r message=FALSE, warning=FALSE}
+twt_to_cmpy=read.csv(paste(mymachine,'/archive/Company_Tweet.csv', sep=""))
+stk=read.csv(paste(mymachine,'/archive/CompanyValues.csv', sep=''))
+twt=read.csv(paste(mymachine,'/archive/Tweet.csv', sep=''))
+```
+
+Using these datasets, I intend to analyze the correlation between Tweets and company's stock prices.
+
+
+## Exploratory Analysis
+
+### 1. Datasets
+#### Company_Tweet dataset
+```{r results = 'hold'}
+str(twt_to_cmpy)
+paste("number of distinct tweets =", n_distinct(twt_to_cmpy$tweet_id))
+paste("company being referred =", paste(unique(twt_to_cmpy$ticker_symbol), collapse=", "))
+paste("number of NA in tweet_id =", sum(is.na(twt_to_cmpy$tweet_id)))
+paste("number of NA in ticker_symbol =", sum(is.na(twt_to_cmpy$ticker_symbol)))
+```
+
+This data set contains two columns. 
+And based on the setup, it seems to show which tweet posts are affecting which company.
+
+```{r}
+twt_to_cmpy%>%
+  group_by(tweet_id) %>%
+  summarize(Referred_Company_Count=n_distinct(ticker_symbol)) %>%
+  count(Referred_Company_Count)
+  #group_by(Referred_Company_Count) %>%
+  #summarize(n_occurrence=count(Referred_Company_Count))
+  #arrange(desc(Referred_Company_Count)) %>% #sort(Referred_Company_Count, decreasing=TRUE) %>%
+  #head(20)
+```
+
+
+
+
+
+
+
+
+
