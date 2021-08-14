@@ -165,7 +165,7 @@ ggplot(twt, aes(x=comment_num)) +
   geom_histogram(binwidth=20, color="grey", fill="grey") +
   stat_bin(binwidth=1, geom="text", aes(label=..count..), angle=90, size=3, hjust=0, vjust=0)
 #+
-#  ylim(0,nrow(twt[twt$comment_num==0,])*1.01) 
+#  ylim(0,nrow(twt[twt$comment_num==0,])*1.01)
 
 
 
