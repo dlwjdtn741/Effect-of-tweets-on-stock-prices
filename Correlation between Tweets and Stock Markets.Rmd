@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r message=FALSE, warning=FALSE}
 library(easypackages)
-libraries("dplyr","janitor")
+libraries("dplyr","janitor","lubridate","ggplot2","tidyr")
 ```
 ```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
 mymachine="/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
@@ -27,9 +27,10 @@ mymachine="/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices
 # Introduction
 
 While I was looking for an interesting project to work on, I came across a Kaggle post called"Tweets about the Top Companies from 2015 and 2020".
+
 (link : https://www.kaggle.com/omermetinn/tweets-about-the-top-companies-from-2015-to-2020)
 
-It includes three datasets.
+It includes three data sets.
   
 ```{r message=FALSE, warning=FALSE}
 twt_to_cmpy=read.csv(paste(mymachine,'/archive/Company_Tweet.csv', sep=""))
@@ -37,13 +38,14 @@ stk=read.csv(paste(mymachine,'/archive/CompanyValues.csv', sep=''))
 twt=read.csv(paste(mymachine,'/archive/Tweet.csv', sep=''))
 ```
 
-Using these datasets, I intend to analyze the correlation between Tweets and company's stock prices.
+Using these, I intend to analyze the correlation between Tweets and company's stock prices.
 
 
 ## Exploratory Analysis
 
-### 1. Datasets
-#### Company_Tweet dataset
+###1. Datasets
+####a) Company_Tweet Dataset
+
 ```{r results = 'hold'}
 str(twt_to_cmpy)
 paste("number of distinct tweets =", n_distinct(twt_to_cmpy$tweet_id))
@@ -52,11 +54,16 @@ paste("number of NA in tweet_id =", sum(is.na(twt_to_cmpy$tweet_id)))
 paste("number of NA in ticker_symbol =", sum(is.na(twt_to_cmpy$ticker_symbol)))
 ```
 
-This data set contains two columns. 
+This data set contains two columns.
+
 And based on the setup, it seems to show which tweet posts are affecting which company.
+
 There isn't much cleaning to do on this data, but it seems like there are duplicated tweet_id. (distinct number of tweets less than the total row).
+
 Does this mean tweets can be related to more than one company at a time?
+
 Let's find out.
+
 ```{r}
 tmp<- twt_to_cmpy%>%
   group_by(tweet_id) %>%
@@ -66,13 +73,112 @@ tmp<- twt_to_cmpy%>%
 print(tmp)
 paste("correct row number =", sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence))
 ```
-According to the above result, the data set should have `r sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence)` rows while the table actually has `r nrow(twt_to_cmpy)`.
+According to the above result, tweets can be related to multiple companies at a time. Also, the data set should have `r format(sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence), big.mark=",")` rows while the table actually has `r format(nrow(twt_to_cmpy),big.mark=",")`.
 This means some rows are duplicated and that needs to be eliminated.
 
 ```{r}
 twt_to_cmpy<-unique(twt_to_cmpy)
 nrow(twt_to_cmpy)
 ```
+
+
+
+####b) CompanyValues Dataset
+```{r result=hold}
+str(stk)
+stk$day_date=as.Date(stk$day_date)
+paste("Date Range = min:", min(stk$day_date),"max:", max(stk$day_date))
+paste("companies included in the data set =", paste(unique(stk$ticker_symbol), collapse=", "))
+paste("number of NA in ticker_symbol =", sum(is.na(stk$ticker_symbol)))
+paste("number of NA in day_date =", sum(is.na(stk$day_date)))
+paste("number of NA in close_value =", sum(is.na(stk$close_value)))
+paste("number of NA in open_value =", sum(is.na(stk$open_value)))
+paste("number of NA in high_value =", sum(is.na(stk$high_value)))
+paste("number of NA in low_value =", sum(is.na(stk$low_value)))
+paste("number of NA in volume =", sum(is.na(stk$volume)))
+```
+
+Looking at the structure of the data set, it doesn't seem to require much cleaning either.
+
+But just to make sure, I will quickly check if the data includes stock info for every stocks each day.
+
+```{r}
+stk%>%
+  group_by(day_date)%>%
+  summarize(daily_recorded_companies=n_distinct(ticker_symbol))%>%
+  arrange(daily_recorded_companies, descending=FALSE)%>%
+  count(daily_recorded_companies)%>%
+  rename(n_occurrence=n)
+
+```
+It seems like there are days where some companies' stock data is not recorded.
+
+Let's take a deeper look into it.
+
+```{r}
+stk%>%
+  group_by(ticker_symbol)%>%
+  summarize(min_date=min(day_date), max_date=max(day_date))
+
+stk%>%
+  group_by(day_date)%>%
+  summarize(daily_recorded_companies=n_distinct(ticker_symbol))%>%
+  group_by(daily_recorded_companies)%>%
+  summarize(min_date=min(day_date), max_date=max(day_date))
+
+```
+
+GOOG and TSLA data starts on different days.
+
+But other than that, the it seems to be continuous through out the days.
+
+####c) Tweet Dataset
+
+```{r result=hold}
+str(twt)
+twt$post_datetime=as_datetime(twt$post_date)
+twt$post_date=as_date(twt$post_datetime)
+paste("Date Range = min:", min(twt$post_date),"max:", max(twt$post_date))
+paste("number of NA in tweet_id =", sum(is.na(twt$tweet_id)))
+paste("number of NA in writer =", sum(is.na(twt$writer)))
+paste("number of NA in post_date =", sum(is.na(twt$post_date)))
+paste("number of NA in body =", sum(is.na(twt$body)))
+paste("number of NA in comment_num =", sum(is.na(twt$comment_num)))
+paste("number of NA in retweet_num =", sum(is.na(twt$retweet_num)))
+paste("number of NA in like_num =", sum(is.na(twt$like_num)))
+paste("number of NA in post_datetime =", sum(is.na(twt$post_datetime)))
+```
+
+This data set does not have any NA values either. But, the record starts from 2015-01-01 to 2019-12-31.
+
+Therefore, I will use the CompanyValue in the same time frame.
+
+```{r}
+stk<-stk%>%
+  filter(between(day_date, as.Date("2015-01-01"), as.Date("2019-12-31")))
+```
+
+Now, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
+
+```{r}
+ggplot(twt, aes(x=comment_num)) +
+  geom_histogram(binwidth=20, color="grey", fill="grey") +
+  stat_bin(binwidth=1, geom="text", aes(label=..count..), angle=0, size=3, hjust=0, vjust=0)
+#+
+#  ylim(0,nrow(twt[twt$comment_num==0,])*1.01)
+
+
+
+```
+
+
+
+
+
+
+
+
+
 
 
 ```{r}
