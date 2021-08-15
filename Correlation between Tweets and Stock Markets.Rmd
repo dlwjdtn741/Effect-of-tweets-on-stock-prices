@@ -151,7 +151,7 @@ paste("number of NA in post_datetime =", sum(is.na(twt$post_datetime)))
 
 This data set does not have any NA values either. But, the record starts from 2015-01-01 to 2019-12-31.
 
-Therefore, I will use the CompanyValue in the same time frame.
+Therefore, I will use the CompanyValue in the same time frame only.
 
 ```{r}
 stk<-stk%>%
@@ -160,16 +160,53 @@ stk<-stk%>%
 
 Now, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
 
-```{r}
+```{r results='hold'}
 ggplot(twt, aes(x=comment_num)) +
-  geom_histogram(binwidth=20, color="grey", fill="grey") +
-  stat_bin(binwidth=1, geom="text", aes(label=..count..), angle=90, size=3, hjust=0, vjust=0)
-#+
-#  ylim(0,nrow(twt[twt$comment_num==0,])*1.01)
+  geom_histogram(binwidth=20, color="gray", fill="gray") +
+  stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
+  scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
+  labs(title="Distribution of comment_num", y="frequency",x="comment_num") +
+  theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
 
-
+ggplot(twt, aes(x=retweet_num)) +
+  geom_histogram(binwidth=20, color="gray", fill="gray") +
+  stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
+  scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
+  labs(title="Distribution of retweet_num", y="frequency",x="retweet_num") +
+  theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
+  
+ggplot(twt, aes(x=like_num)) +
+  geom_histogram(binwidth=20, color="gray", fill="gray") +
+  stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
+  scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
+  labs(title="Distribution of like_num", y="frequency",x="like_num") +
+  theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
 
 ```
+
+So, most of the tweets don't have any comments, likes, or hasn't been retweeted.
+
+Let's see the ratio of 0 to non-zero values of these three columns.
+
+```{r}
+twt%>%
+  select(comment_num, retweet_num, like_num)%>%
+  mutate(comment_num=if_else(comment_num==0,"no_value","yes_value"),
+         retweet_num=if_else(retweet_num==0,"no_value","yes_value"),
+         like_num=if_else(like_num==0,"no_value","yes_value"))%>%
+  gather(variable,value)%>%
+  group_by(value, variable) %>%
+  summarize(p=sprintf('%.1f%%',n()*100/nrow(twt)), .groups="drop")%>%
+  pivot_wider(id_cols=value, names_from = variable, values_from=p)%>%
+  rename("yes/no values"=value)
+```
+
+From this result, we can see that 85.6% of the whole tweets do not have any comments, 66.8% don't have likes and 83.3% haven't been retweeted.
+
+
+
+
+
 
 
 
