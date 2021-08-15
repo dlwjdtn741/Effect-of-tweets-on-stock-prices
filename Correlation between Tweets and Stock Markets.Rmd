@@ -50,8 +50,8 @@ Using these, I intend to analyze the correlation between Tweets and company's st
 str(twt_to_cmpy)
 paste("number of distinct tweets =", n_distinct(twt_to_cmpy$tweet_id))
 paste("company being referred =", paste(unique(twt_to_cmpy$ticker_symbol), collapse=", "))
-paste("number of NA in tweet_id =", sum(is.na(twt_to_cmpy$tweet_id)))
-paste("number of NA in ticker_symbol =", sum(is.na(twt_to_cmpy$ticker_symbol)))
+paste("number of NA or blanks in tweet_id =", sum(is.na(twt_to_cmpy$tweet_id),nrow(twt_to_cmpy[twt_to_cmpy$tweet_id=="",])))
+paste("number of NA or blanks in ticker_symbol =", sum(is.na(twt_to_cmpy$ticker_symbol),nrow(twt_to_cmpy[twt_to_cmpy$ticker_symbol=="",])))
 ```
 
 This data set contains two columns.
@@ -89,13 +89,13 @@ str(stk)
 stk$day_date=as.Date(stk$day_date)
 paste("Date Range = min:", min(stk$day_date),"max:", max(stk$day_date))
 paste("companies included in the data set =", paste(unique(stk$ticker_symbol), collapse=", "))
-paste("number of NA in ticker_symbol =", sum(is.na(stk$ticker_symbol)))
+paste("number of NA or blanks in ticker_symbol =", sum(is.na(stk$ticker_symbol),nrow(stk[stk$ticker_symbol=="",])))
 paste("number of NA in day_date =", sum(is.na(stk$day_date)))
-paste("number of NA in close_value =", sum(is.na(stk$close_value)))
-paste("number of NA in open_value =", sum(is.na(stk$open_value)))
-paste("number of NA in high_value =", sum(is.na(stk$high_value)))
-paste("number of NA in low_value =", sum(is.na(stk$low_value)))
-paste("number of NA in volume =", sum(is.na(stk$volume)))
+paste("number of NA or blanks in close_value =", sum(is.na(stk$close_value),nrow(stk[stk$close_value=="",])))
+paste("number of NA or blanks in open_value =", sum(is.na(stk$open_value),nrow(stk[stk$open_value=="",])))
+paste("number of NA or blanks in high_value =", sum(is.na(stk$high_value),nrow(stk[stk$high_value=="",])))
+paste("number of NA or blanks in low_value =", sum(is.na(stk$low_value),nrow(stk[stk$low_value=="",])))
+paste("number of NA or blanks in volume =", sum(is.na(stk$volume),nrow(stk[stk$volume=="",])))
 ```
 
 Looking at the structure of the data set, it doesn't seem to require much cleaning either.
@@ -139,13 +139,13 @@ str(twt)
 twt$post_datetime=as_datetime(twt$post_date)
 twt$post_date=as_date(twt$post_datetime)
 paste("Date Range = min:", min(twt$post_date),"max:", max(twt$post_date))
-paste("number of NA in tweet_id =", sum(is.na(twt$tweet_id)))
-paste("number of NA in writer =", sum(is.na(twt$writer)))
+paste("number of NA or blanks in tweet_id =", sum(is.na(twt$tweet_id),nrow(twt[twt$tweet_id=="",])))
+paste("number of NA or blanks in writer =", sum(is.na(twt$writer),nrow(twt[twt$writer=="",])))
 paste("number of NA in post_date =", sum(is.na(twt$post_date)))
-paste("number of NA in body =", sum(is.na(twt$body)))
-paste("number of NA in comment_num =", sum(is.na(twt$comment_num)))
-paste("number of NA in retweet_num =", sum(is.na(twt$retweet_num)))
-paste("number of NA in like_num =", sum(is.na(twt$like_num)))
+paste("number of NA or blanks in body =", sum(is.na(twt$body),nrow(twt[twt$body=="",])))
+paste("number of NA or blanks in comment_num =", sum(is.na(twt$comment_num),nrow(twt[twt$comment_num=="",])))
+paste("number of NA or blanks in retweet_num =", sum(is.na(twt$retweet_num),nrow(twt[twt$retweet_num=="",])))
+paste("number of NA or blanks in like_num =", sum(is.na(twt$like_num),nrow(twt[twt$like_num=="",])))
 paste("number of NA in post_datetime =", sum(is.na(twt$post_datetime)))
 ```
 
@@ -158,7 +158,7 @@ stk<-stk%>%
   filter(between(day_date, as.Date("2015-01-01"), as.Date("2019-12-31")))
 ```
 
-Now, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
+First, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
 
 ```{r results='hold'}
 ggplot(twt, aes(x=comment_num)) +
@@ -203,7 +203,15 @@ twt%>%
 
 From this result, we can see that 85.6% of the whole tweets do not have any comments, 66.8% don't have likes and 83.3% haven't been retweeted.
 
+Next, I will perform general analysis on the content of the tweets.
+```{r}
+twt$body_len=sapply(lapply(strsplit(twt$body," "), function(x){x[!x==""]}), length)
+summary(twt$body_len)
 
+a<-twt%>%
+  arrange(desc(twt$body_len))%>%
+  head(100)
+```
 
 
 
@@ -223,6 +231,8 @@ From this result, we can see that 85.6% of the whole tweets do not have any comm
   #summarize(n_occurrence=count(Referred_Company_Count))
   #arrange(desc(Referred_Company_Count)) %>% #sort(Referred_Company_Count, decreasing=TRUE) %>%
   #head(20)
+test<-twt%>%
+  filter(post_date=="")
 ```
 
 
