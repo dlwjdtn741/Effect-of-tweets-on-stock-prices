@@ -9,16 +9,18 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-#knitr::knit_hooks$set(document = function(x){
-#  gsub("```\n*```r*\n*", "", x)
-#})
 ```
 
 #### Used Packages
 
 ```{r message=FALSE, warning=FALSE}
 library(easypackages)
-libraries("dplyr","janitor","lubridate","ggplot2","tidyr")
+libraries("dplyr",
+          "janitor",
+          "lubridate",
+          "ggplot2",
+          "tidyr"
+          )
 ```
 ```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
 mymachine="/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
@@ -189,23 +191,113 @@ So, most of the tweets don't have any comments, likes, or hasn't been retweeted.
 Let's see the ratio of 0 to non-zero values of these three columns.
 
 ```{r}
+twt<-twt%>%
+  mutate(yesno_comment=if_else(comment_num==0,"no_value","yes_value"),
+         yesno_retweet=if_else(retweet_num==0,"no_value","yes_value"),
+         yesno_like=if_else(like_num==0,"no_value","yes_value"))
 twt%>%
-  select(comment_num, retweet_num, like_num)%>%
-  mutate(comment_num=if_else(comment_num==0,"no_value","yes_value"),
-         retweet_num=if_else(retweet_num==0,"no_value","yes_value"),
-         like_num=if_else(like_num==0,"no_value","yes_value"))%>%
-  gather(variable,value)%>%
-  group_by(value, variable) %>%
+  select(yesno_comment, yesno_retweet, yesno_like) %>%
+  rename(comment=yesno_comment, retweet=yesno_retweet, like=yesno_like)%>%
+  gather(key=type,value=yesno_value)%>%
+  group_by(type, yesno_value) %>%
   summarize(p=sprintf('%.1f%%',n()*100/nrow(twt)), .groups="drop")%>%
-  pivot_wider(id_cols=value, names_from = variable, values_from=p)%>%
-  rename("yes/no values"=value)
+  pivot_wider(id_cols="yesno_value", names_from = "type", values_from=p)
 ```
 
 From this result, we can see that 85.6% of the whole tweets do not have any comments, 66.8% don't have likes and 83.3% haven't been retweeted.
 
+Now, I would like to see the hourly distribution of the tweet update.
+
+I will like to check if the posted hour affect whether the tweet will get likes, comments or retweeted. 
+
+Let's define tweets that has been liked, commented or retweeted as having awareness.
+```{r}
+twt.p1<-twt%>%
+  mutate(aware=if_else((comment_num+like_num+retweet_num)==0,"no_awareness","yes_awareness"))%>%
+  group_by(hour(post_datetime), aware)%>%
+  summarize(tweet_ct=n(), .groups='drop')%>%
+  rename(post_hour="hour(post_datetime)")
+  
+twt.p1<-twt.p1%>%
+  mutate(aware="total")%>%
+  group_by(post_hour, aware)%>%
+  summarize(tweet_ct=sum(tweet_ct), .groups="drop")%>%
+  rbind(twt.p1)
+
+p1<-ggplot(twt.p1, aes(x=post_hour, y=tweet_ct, group=aware))+
+  geom_line(aes(color=aware, linetype=aware), size=0.6)+
+  geom_point(aes(color=aware, shape=aware), size=2)+
+  scale_color_manual(values=c(total="#9B59B6", no_awareness="#E74C3C", yes_awareness="#3498DB"))+
+  scale_linetype_manual(values=c(total="solid", no_awareness="dotted", yes_awareness="dotted"))+
+  scale_shape_manual(values=c(total=19, no_awareness=15, yes_awareness=17))+
+  theme(
+    panel.background=element_rect(fill="white", color="gray", size=0.7),
+    panel.grid.major.y=element_line(size=0.25, color="gray", linetype="dotted"),
+    panel.grid.major.x=element_line(size=0.25, color="gray", linetype="dotted"),
+    panel.grid.minor.x=element_line(size=0.25, color="gray", linetype="dotted"),
+    axis.title=element_text(size=10),
+    plot.title=element_text(size=14, hjust=0.5, face="bold"),
+    legend.title=element_blank(),
+    legend.justification = "top"
+  ) +
+  scale_x_continuous(minor_breaks=c(0:23)) +
+  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}, n.breaks = 10) +
+  labs(title="Hourly Distribution of Tweets by Awareness", x="Hour", y="Number of Tweets")
+p1
+```
+According to the graph above, all three lines share the same shape.
+
+This signifies that posted hour is not correlated to awareness.
+
+This hypothesis can be tested by performing the correlation test (calculating Pearson's correlation coefficient and testing the hypothesis of significant correlation)
+
+```{r}
+cor1<-twt%>%
+  mutate(post_hour=hour(post_datetime),
+         aware=if_else(comment_num+like_num+retweet_num>0,0,1))%>%
+  select(post_hour, aware)
+
+summary(cor1)
+
+cor.test(cor1$post_hour, cor1$aware, method="spearman")
+ggplot(cor1, aes(x=aware, y=post_hour))+
+  geom_boxplot()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+if it is correlated whether the tweet has been commented, liked, or retweeted.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Next, I will perform general analysis on the content of the tweets.
 ```{r}
-twt$body_len=sapply(lapply(strsplit(twt$body," "), function(x){x[!x==""]}), length)
+twt$body_len=sapply(
+  lapply(
+    strsplit(twt$body," ") #splitting strings by " "
+         , function(x){x[!x==""]}) #using lapply to delete blank elements
+  , length) #counting the number of elements in the list.
 summary(twt$body_len)
 
 a<-twt%>%
