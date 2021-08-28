@@ -19,7 +19,10 @@ libraries("dplyr",
           "janitor",
           "lubridate",
           "ggplot2",
-          "tidyr"
+          "tidyr",
+          "car",
+          "caret",
+          "ggpubr"
           )
 ```
 ```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
@@ -48,7 +51,7 @@ Using these, I intend to analyze the correlation between Tweets and company's st
 ###1. Datasets
 ####a) Company_Tweet Dataset
 
-```{r results = 'hold'}
+```{r results = hold}
 str(twt_to_cmpy)
 paste("number of distinct tweets =", n_distinct(twt_to_cmpy$tweet_id))
 paste("company being referred =", paste(unique(twt_to_cmpy$ticker_symbol), collapse=", "))
@@ -162,7 +165,7 @@ stk<-stk%>%
 
 First, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
 
-```{r results='hold'}
+```{r results=hold}
 ggplot(twt, aes(x=comment_num)) +
   geom_histogram(binwidth=20, color="gray", fill="gray") +
   stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
@@ -183,7 +186,6 @@ ggplot(twt, aes(x=like_num)) +
   scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
   labs(title="Distribution of like_num", y="frequency",x="like_num") +
   theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
-
 ```
 
 So, most of the tweets don't have any comments, likes, or hasn't been retweeted.
@@ -206,62 +208,142 @@ twt%>%
 
 From this result, we can see that 85.6% of the whole tweets do not have any comments, 66.8% don't have likes and 83.3% haven't been retweeted.
 
-Now, I would like to see the hourly distribution of the tweet update.
 
-I will like to check if the posted hour affect whether the tweet will get likes, comments or retweeted. 
+Now, I'd like to do some analysis on the writer column.
 
-Let's define tweets that has been liked, commented or retweeted as having awareness.
-```{r}
-twt.p1<-twt%>%
-  mutate(aware=if_else((comment_num+like_num+retweet_num)==0,"no_awareness","yes_awareness"))%>%
-  group_by(hour(post_datetime), aware)%>%
-  summarize(tweet_ct=n(), .groups='drop')%>%
-  rename(post_hour="hour(post_datetime)")
-  
-twt.p1<-twt.p1%>%
-  mutate(aware="total")%>%
-  group_by(post_hour, aware)%>%
-  summarize(tweet_ct=sum(tweet_ct), .groups="drop")%>%
-  rbind(twt.p1)
+Knowing that there `r sum(is.na(twt$writer),nrow(twt[twt$writer=="",]` writers within the data table with `r nrow(twt)` rows, one can clearly see that some of the writers posted multiple tweets. I would like to see the distribution of the number of tweets each of these writer had posted.
 
-p1<-ggplot(twt.p1, aes(x=post_hour, y=tweet_ct, group=aware))+
-  geom_line(aes(color=aware, linetype=aware), size=0.6)+
-  geom_point(aes(color=aware, shape=aware), size=2)+
-  scale_color_manual(values=c(total="#9B59B6", no_awareness="#E74C3C", yes_awareness="#3498DB"))+
-  scale_linetype_manual(values=c(total="solid", no_awareness="dotted", yes_awareness="dotted"))+
-  scale_shape_manual(values=c(total=19, no_awareness=15, yes_awareness=17))+
-  theme(
-    panel.background=element_rect(fill="white", color="gray", size=0.7),
-    panel.grid.major.y=element_line(size=0.25, color="gray", linetype="dotted"),
-    panel.grid.major.x=element_line(size=0.25, color="gray", linetype="dotted"),
-    panel.grid.minor.x=element_line(size=0.25, color="gray", linetype="dotted"),
-    axis.title=element_text(size=10),
-    plot.title=element_text(size=14, hjust=0.5, face="bold"),
-    legend.title=element_blank(),
-    legend.justification = "top"
-  ) +
-  scale_x_continuous(minor_breaks=c(0:23)) +
-  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}, n.breaks = 10) +
-  labs(title="Hourly Distribution of Tweets by Awareness", x="Hour", y="Number of Tweets")
-p1
+```{r result=hold}
+twt_w <- twt %>%
+  group_by ( writer ) %>%
+  summarize ( tweet_ct = length ( unique( tweet_id ) ) ,
+              comment_num = sum ( comment_num ) ,
+              retweet_num = sum ( retweet_num ) ,
+              like_num = sum ( like_num ) ,
+              tweet_ct_m = ifelse( length ( unique( tweet_id ) ) > 1 , 1, 0 ),
+              .groups = "drop" )
+
+tp100_twtct<-twt_w %>%
+  select( writer , tweet_ct ) %>%
+  mutate( percent_of_total = tweet_ct / sum( twt_w$tweet_ct ) ) %>%
+  arrange( desc ( tweet_ct ) ) %>%
+  head(100)
+
+tp100_cmtct<-twt_w %>%
+  select( writer , comment_num ) %>%
+  mutate( percent_of_total = comment_num / sum( twt_w$comment_num ) ) %>%
+  arrange( desc ( comment_num ) ) %>%
+  head(100)
+
+tp100_rtct<-twt_w %>%
+  select( writer , retweet_num ) %>%
+  mutate( percent_of_total = retweet_num / sum( twt_w$retweet_num ) ) %>%
+  arrange( desc ( retweet_num) ) %>%
+  head(100)
+
+tp100_lkct<-twt_w %>%
+  select( writer , like_num ) %>%
+  mutate( percent_of_total = like_num / sum( twt_w$like_num ) ) %>%
+  arrange( desc ( like_num ) ) %>%
+  head(100)
+
+tp100_twtct%>%
+  mutate( tweet_ct = sapply( tweet_ct , function(x) {format( x , big.mark="," )} ),
+         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
+  )
+tp100_cmtct%>%
+  mutate( comment_num = sapply( comment_num , function(x) {format( x , big.mark="," )} ),
+         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
+  )
+tp100_rtct%>%
+  mutate( retweet_num = sapply( retweet_num , function(x) {format( x , big.mark="," )} ),
+         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
+  )
+tp100_lkct%>%
+  mutate( like_num = sapply( like_num , function(x) {format( x , big.mark="," )} ),
+         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
+  )
+
 ```
-According to the graph above, all three lines share the same shape.
 
-This signifies that posted hour is not correlated to awareness.
+Indeed, above result confirms tweet counts, comment num, like num, and retweet num is heavily weighted on handful of writers.
 
-This hypothesis can be tested by performing the correlation test (calculating Pearson's correlation coefficient and testing the hypothesis of significant correlation)
+The top 100 takes up `rsprintf('%.1f%%', sum( tp100_twtct$percent_of_total ) *100 )` of total tweets,`r sprintf('%.1f%%', sum( tp100_cmtct$percent_of_total ) *100 )` of total comments, `r sprintf('%.1f%%', sum( tp100_rtct$percent_of_total ) *100 )` of total retweets and `r sprintf('%.1f%%', sum( tp100_lkct$percent_of_total ) *100 )` of total likes. 
 
 ```{r}
-cor1<-twt%>%
-  mutate(post_hour=hour(post_datetime),
-         aware=if_else(comment_num+like_num+retweet_num>0,0,1))%>%
-  select(post_hour, aware)
+table(twt_w$tweet_ct_m)
+```
 
-summary(cor1)
+And out of `r length(unique(twt$writer))` writers, `r format(length(twt_w$tweet_ct_m[twt_w$tweet_ct_m==1]), big.mark=",")` users posted more than one tweets while `r format(length(twt_w$tweet_ct_m[twt_w$tweet_ct_m==0]), big.mark=",")` users only posted single tweet.
 
-cor.test(cor1$post_hour, cor1$aware, method="spearman")
-ggplot(cor1, aes(x=aware, y=post_hour))+
+Let's take a look at distribution of tweets over time.
+
+```{r fig.width=2}
+twt_d<-twt %>%
+  mutate(post_date_x=as.Date(format(post_date, "%Y-%m-01")))%>%
+  group_by(post_date_x)%>%
+  summarize(writer_ct = length(unique(writer)),
+            tweet_ct = length(unique(tweet_id)),
+            comment_ct = sum(comment_num),
+            like_ct = sum(like_num),
+            retweet_ct = sum(retweet_num),
+            yescomment_ct=length(yesno_comment[yesno_comment=="yes_value"]),
+            yesretweet_ct=length(yesno_retweet[yesno_retweet=="yes_value"]),
+            yeslike_ct=length(yesno_like[yesno_like=="yes_value"])
+            )
+
+colors<-c("Have Comments" = "#C0392B", "Have Likes" = "#2980B9", "Retweeted" = "#17A589")
+ggplot(twt_d, aes(x=post_date_x))+
+  geom_col(aes(y=tweet_ct),fill="white", color="lightgrey")+
+#lines
+  geom_line(aes(y=yescomment_ct, color="Have Comments"), size=1)+
+  geom_line(aes(y=yesretweet_ct, color="Retweeted") , size=1)+
+  geom_line(aes(y=yeslike_ct, color="Have Likes"), size=1)+
+#trendline
+  geom_smooth(aes(y=tweet_ct, color="grey"), method="lm", se=FALSE, linetype="dashed", size=0.1)+
+  geom_smooth(aes(y=yescomment_ct, color="Have Comments"), method="lm", se=FALSE, linetype="dashed", size=0.5)+
+  geom_smooth(aes(y=yesretweet_ct, color="Retweeted"), method="lm", se=FALSE, linetype="dashed", size=0.5)+
+  geom_smooth(aes(y=yeslike_ct, color="Have Likes"), method="lm", se=FALSE, linetype="dashed", size=0.5)+
+#r2
+  stat_regline_equation(aes(y=tweet_ct, label = ..eq.label..), label.x=17000, label.y=67000, size=3.5)+
+  stat_regline_equation(aes(y=yescomment_ct, label = ..eq.label.., color="Have Comments"), label.x=16900, label.y=-100, show.legend=FALSE, size=3.5)+
+  stat_regline_equation(aes(y=yesretweet_ct, label = ..eq.label.., color="Retweeted"), label.x=17700, label.y=7000, show.legend=FALSE, size=3.5)+
+  stat_regline_equation(aes(y=yeslike_ct, label = ..eq.label.., color="Have Likes"), label.x=17100, label.y=25000, show.legend=FALSE, size=3.5)+
+  labs(y="Number of Tweets",
+       x="Year Month",
+       color="Legend")+
+  scale_color_manual(values=colors)
+
+
+```
+
+
+
+
+
+
+There is a huge spike on total like counts after 2018.
+
+Let's see what is going on.
+
+```{r}
+twt_l<-twt%>%
+  select(writer, post_date, like_num)%>%
+  mutate(post_date=year(post_date))%>%
+  group_by(writer, post_date)%>%
+  summarize(like_num=sum(like_num), .groups="drop")%>%
+  pivot_wider(id_cols = writer,names_from = post_date, values_from=like_num, values_fill = 0)
+
+sprintf("%.1f%%",tail(twt_l$"2015"[order(twt_l$"2015")],10)/sum(twt_l$"2015")*100)
+sprintf("%.1f%%",tail(twt_l$"2016"[order(twt_l$"2016")],10)/sum(twt_l$"2016")*100)
+sprintf("%.1f%%",tail(twt_l$"2017"[order(twt_l$"2017")],10)/sum(twt_l$"2017")*100)
+sprintf("%.1f%%",tail(twt_l$"2018"[order(twt_l$"2018")],10)/sum(twt_l$"2018")*100)
+sprintf("%.1f%%",tail(twt_l$"2019"[order(twt_l$"2019")],10)/sum(twt_l$"2019")*100)
+
+
+ggplot(twt_l, aes(x=post_date, y=like_num))+
   geom_boxplot()
+
 ```
 
 
@@ -275,34 +357,39 @@ ggplot(cor1, aes(x=aware, y=post_hour))+
 
 
 
-if it is correlated whether the tweet has been commented, liked, or retweeted.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Next, I will perform general analysis on the content of the tweets.
 ```{r}
-twt$body_len=sapply(
-  lapply(
-    strsplit(twt$body," ") #splitting strings by " "
-         , function(x){x[!x==""]}) #using lapply to delete blank elements
-  , length) #counting the number of elements in the list.
-summary(twt$body_len)
+a<-twt%>%
+  mutate(post_year=paste("y",year(post_date), sep=""))%>%
+  group_by(post_year, writer) %>%
+  summarize(like=sum(like_num), .groups="drop")%>%
+  pivot_wider(id_cols=writer, names_from=post_year, values_from=like, values_fill = 0)%>%
+  summarize_if(as.numeric, max)
+
+twt%>%
+  arrange(desc(like_num))
+# apply(a,2,max)  
+#   
+#   
+#   arrange(desc(y2019))%>%
+#   colMaxs()
+tail(a$y2015[order(a$y2015)],10)
+tail(a$y2016[order(a$y2016)],10)
+tail(a$y2017[order(a$y2017)],10)
+tail(a$y2018[order(a$y2018)],10)
+tail(a$y2019[order(a$y2019)],10)
+
+test<-twt%>%
+  mutate(elonmusk=ifelse(grepl("elon", body, ignore.case=TRUE),1,0),
+         trump=ifelse(grepl("trump", body, ignore.case=TRUE),1,0))
+
 
 a<-twt%>%
-  arrange(desc(twt$body_len))%>%
-  head(100)
+  arrange(desc(like_num))%>%
+  head(100)%>%
+  mutate(post_year=year(post_date))
+table(a$post_year)
+
+table(test$elonmusk)
 ```
 
 
@@ -318,14 +405,6 @@ a<-twt%>%
 
 
 
-```{r}
-  #group_by(Referred_Company_Count) %>%
-  #summarize(n_occurrence=count(Referred_Company_Count))
-  #arrange(desc(Referred_Company_Count)) %>% #sort(Referred_Company_Count, decreasing=TRUE) %>%
-  #head(20)
-test<-twt%>%
-  filter(post_date=="")
-```
 
 
 
@@ -335,3 +414,452 @@ test<-twt%>%
 
 
 
+
+
+<!-- ```{r} -->
+<!-- twt_w %>% -->
+<!--   group_by(tweet_ct_m) %>% -->
+<!--   summarize(total_tweet_ct = sum(tweet_ct), -->
+<!--             total_comments = sum(comment_num), -->
+<!--             total_likes = sum(like_num), -->
+<!--             total_retweet = sum(retweet_num)) -->
+
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ```{r} -->
+<!-- tp100_twtct<-twt_w %>% -->
+<!--   select( writer , tweet_ct ) %>% -->
+<!--   mutate( percent_of_total = tweet_ct / sum( twt_w$tweet_ct ) ) %>% -->
+<!--   arrange( desc ( tweet_ct ) ) %>% -->
+<!--   head(100) -->
+
+<!-- tp100_cmtct<-twt_w %>% -->
+<!--   select( writer , comment_num ) %>% -->
+<!--   mutate( percent_of_total = comment_num / sum( twt_w$comment_num ) ) %>% -->
+<!--   arrange( desc ( comment_num ) ) %>% -->
+<!--   head(100) -->
+
+<!-- tp100_rtct<-twt_w %>% -->
+<!--   select( writer , retweet_num ) %>% -->
+<!--   mutate( percent_of_total = retweet_num / sum( twt_w$retweet_num ) ) %>% -->
+<!--   arrange( desc ( retweet_num) ) %>% -->
+<!--   head(100) -->
+
+<!-- tp100_lkct<-twt_w %>% -->
+<!--   select( writer , like_num ) %>% -->
+<!--   mutate( percent_of_total = like_num / sum( twt_w$like_num ) ) %>% -->
+<!--   arrange( desc ( like_num ) ) %>% -->
+<!--   head(100) -->
+
+<!-- tp100_twtct[,1:2] -->
+<!-- tp100_cmtct[,1:2] -->
+<!-- tp100_rtct[,1:2] -->
+<!-- tp100_lkct[,1:2] -->
+
+
+<!-- paste("Top 100 takes up", sprintf('%.1f%%', sum( tp100_twtct$percent_of_total ) *100 ),"of total tweets,", -->
+<!--       sprintf('%.1f%%', sum( tp100_cmtct$percent_of_total ) *100 ),"of total comments", -->
+<!--       sprintf('%.1f%%', sum( tp100_rtct$percent_of_total ) *100 ),"of total retweets", -->
+<!--       sprintf('%.1f%%', sum( tp100_lkct$percent_of_total ) *100 ),"of total likes") -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ```{r} -->
+<!-- writers<-Reduce(intersect, list(tp100_twtct$writer, tp100_cmtct$writer, tp100_rtct$writer, tp100_lkct$writer)) -->
+
+<!-- twt_w%>% -->
+<!--   filter ( writer %in% writers ) %>% -->
+<!--   select ( -"tweet_ct_m" ) %>% -->
+<!--   mutate ( tweet_ct = sprintf( '%.1f%%' , tweet_ct / sum( twt_w$tweet_ct ) *100 ) , -->
+<!--            comment_num = sprintf( '%.1f%%' , comment_num / sum( twt_w$comment_num ) *100 ) , -->
+<!--            retweet_num = sprintf( '%.1f%%' , retweet_num / sum( twt_w$retweet_num ) *100 ) ,  -->
+<!--            like_num = sprintf( '%.1f%%' , like_num / sum( twt_w$like_num ) *100 ) -->
+<!--   ) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ```{r} -->
+<!--     # tweet_ct = sapply( length( unique(tweet_id) ) ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--     #           comment_num=sapply( sum( comment_num ) ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--     #           retweet_num=sapply( sum( retweet_num ) ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--     #           like_num=sapply( sum( like_num ), function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--     #           .groups= "drop" ) -->
+
+<!-- twt_w_gg<-twt_w %>% -->
+<!--   arrange( desc ( tweet_ct ) ) %>% -->
+<!--   mutate(tweet_ct = sapply( tweet_ct ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--                comment_num=sapply( comment_num ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--                retweet_num=sapply( retweet_num ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
+<!--                like_num=sapply( like_num , function(x) {format(x,big.mark = ",", scientific = FALSE)})) -->
+
+<!-- table(twt_w$tweet_ct_m) -->
+
+
+<!-- twt_w %>% -->
+<!--   group_by ( ct_grp ) %>% -->
+<!--   summarize ( n = n () , .groups = "drop" ) -->
+
+
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- I intend to study the possible contributing factors to why some of these posts get attention while some of them don't. -->
+
+<!-- First, I will see if the content of the body determine the awareness (comment, like or retweet) of the tweets -->
+<!-- ```{r} -->
+<!-- print(sample(twt$body,50)) -->
+<!-- ``` -->
+<!-- Above is the list of 50 randomly chosen tweets. -->
+
+<!-- And based on this sample, let's define 5 traits by observing whether the tweet contains any links, twitter handle (mentioning other twitter user by inputting "@"), hash tag, ticker symbol, or mention any dollar amount. -->
+
+
+<!-- ```{r} -->
+<!-- twt_b<-twt%>% -->
+<!--   mutate(link=as.factor(if_else(grepl("http://",body),1,0)), -->
+<!--          handle=as.factor(if_else(grepl("@[a-z,A-Z]", body),1,0)), #would use "\\D" instead of "[a-z,A-Z]" but that includes instances that has space after "@" -->
+<!--          hash=as.factor(if_else(grepl("#[a-z,A-Z]", body),1,0)), -->
+<!-- #         tick=if_else(grepl("\\$\\D{4}", body),1,0), -->
+<!--          dollar=as.factor(if_else(grepl("\\$\\d", body),1,0)), -->
+<!--          comment=as.factor(if_else(comment_num>0,1,0)), -->
+<!--          like=as.factor(if_else(like_num>0,1,0)), -->
+<!--          retweet=as.factor(if_else(retweet_num>0,1,0)) -->
+<!--          ) -->
+
+<!-- twt_b_cor<-twt_b%>% -->
+<!--   select(link, handle, hash, tick, dollar) -->
+
+<!-- twt_b%>% -->
+<!--   gather(indic_type, val)%>% -->
+<!--   mutate(val=if_else(val==0,"No","Yes"))%>% -->
+<!--   group_by(indic_type, val)%>% -->
+<!--   summarize(n=sprintf('%.1f%%',n()*100/nrow(twt_b)), .groups="drop")%>%   -->
+<!--   pivot_wider(names_from=indic_type, values_from=n)%>% -->
+<!--   rename("Contain In Body?"=val) -->
+
+<!-- #   -->
+<!-- #   -->
+<!-- #  %>% -->
+<!-- #  -->
+<!-- # -->
+<!--  #twt_b%>% -->
+<!--  #  select(link, handle, hash, tick, dollar) %>% -->
+<!--  #  cor() -->
+<!--  #   -->
+<!--  #   -->
+<!--  #  gather(char_type, indicator)%>% -->
+<!-- # cor ( char_type, indicator ) -->
+<!-- #(twt_b_cor) -->
+<!-- ``` -->
+
+<!-- This table represents the proportion of tweets that contains the corresponding traits.  -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- First, I will apply the correlation matrix on this table and check for multicollinearity between these variables. -->
+
+<!-- Variables with absolute value correlation coefficient greater than 0.7 will be deemed as multicollinear. -->
+
+<!-- ```{r} -->
+<!-- cor(twt_b_cor) -->
+<!-- #pairs(twt_b_cor) -->
+<!-- ``` -->
+
+<!-- Since none of the coefficients exceeds 0.7, all of the variables will be used in the analysis. -->
+
+<!-- ```{r result=hold} -->
+<!-- twt_b_lm<-twt_b%>% -->
+<!--   select(comment, like, retweet, link, handle, hash,  -->
+<!--          #tick,  -->
+<!--          dollar) -->
+
+
+<!-- twt_b_lm%>% -->
+<!-- #  select(-"Class")%>% -->
+<!--   gather(indic_type, val)%>% -->
+<!--   mutate(val=if_else(val==0,"No","Yes"))%>% -->
+<!--   group_by(indic_type, val)%>% -->
+<!--   summarize(n=sprintf('%.1f%%',n()*100/nrow(twt_b_lm)), .groups="drop")%>%   -->
+<!--   pivot_wider(names_from=indic_type, values_from=n)%>% -->
+<!--   rename("Contain In Body?"=val) -->
+
+
+<!-- twt_c_lm<-twt_b_lm%>% -->
+<!--   select(-one_of("like","retweet")) -->
+<!-- twt_l_lm<-twt_b_lm%>% -->
+<!--   select(-one_of("comment","retweet")) -->
+<!-- twt_t_lm<-twt_b_lm%>% -->
+<!--   select(-one_of("comment","like")) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- set.seed(1234) -->
+<!-- c_train<-createDataPartition(y=twt_c_lm$comment, p=0.8, list=FALSE) -->
+<!-- twt_c_train<-twt_c_lm[c_train,] -->
+<!-- twt_c_test<-twt_c_lm[-c_train,] -->
+
+<!-- test<-downSample(twt_c_train, twt_c_train$dollar) -->
+<!-- test%>% -->
+<!--   gather(indic_type, val)%>% -->
+<!--   mutate(val=if_else(val==0,"No","Yes"))%>% -->
+<!--   group_by(indic_type, val)%>% -->
+<!--   summarize(n=sprintf('%.1f%%',n()*100/nrow(test)), .groups="drop")%>%   -->
+<!--   pivot_wider(names_from=indic_type, values_from=n)%>% -->
+<!--   rename("Contain In Body?"=val) -->
+
+<!-- #test<-test%>% -->
+<!-- #  select(-"Class") -->
+<!-- # -->
+<!-- #twt_c_fit<-train(comment~., data=test, method="rf",  -->
+<!-- #                 trControl=trainControl( -->
+<!-- #                   method="cv", -->
+<!-- #                   number = 10) -->
+<!-- #                 ) -->
+<!-- # -->
+<!-- #twt_c_fit -->
+<!-- # -->
+<!-- # -->
+<!-- #summary(glm(data=twt_c_lm, comment ~ . , family=binomial)) -->
+<!-- #1-pchisq(3061602-2686863, 3717963-3717958) -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--  # -->
+<!--  #the hourly distribution of the tweet update. -->
+<!--  # -->
+<!--  #I will like to check if the posted hour affect whether the tweet will get likes, comments or retweeted.  -->
+<!--  # -->
+<!--  #Let's define tweets that has been liked, commented or retweeted as having awareness. -->
+<!--  #```{r} -->
+<!--  #twt.p1<-twt%>% -->
+<!--  #  mutate(aware=if_else((comment_num+like_num+retweet_num)==0,"no_awareness","yes_awareness"))%>% -->
+<!--  #  group_by(hour(post_datetime), aware)%>% -->
+<!--  #  summarize(tweet_ct=n(), .groups='drop')%>% -->
+<!--  #  rename(post_hour="hour(post_datetime)") -->
+<!--  #   -->
+<!--  #twt.p1<-twt.p1%>% -->
+<!--  #  mutate(aware="total")%>% -->
+<!--  #  group_by(post_hour, aware)%>% -->
+<!--  #  summarize(tweet_ct=sum(tweet_ct), .groups="drop")%>% -->
+<!--  #  rbind(twt.p1) -->
+<!--  # -->
+<!--  #p1<-ggplot(twt.p1, aes(x=post_hour, y=tweet_ct, group=aware))+ -->
+<!--  #  geom_line(aes(color=aware, linetype=aware), size=0.6)+ -->
+<!--  #  geom_point(aes(color=aware, shape=aware), size=2)+ -->
+<!--  #  scale_color_manual(values=c(total="#9B59B6", no_awareness="#E74C3C", yes_awareness="#3498DB"))+ -->
+<!--  #  scale_linetype_manual(values=c(total="solid", no_awareness="dotted", yes_awareness="dotted"))+ -->
+<!--  #  scale_shape_manual(values=c(total=19, no_awareness=15, yes_awareness=17))+ -->
+<!--  #  theme( -->
+<!--  #    panel.background=element_rect(fill="white", color="gray", size=0.7), -->
+<!--  #    panel.grid.major.y=element_line(size=0.25, color="gray", linetype="dotted"), -->
+<!--  #    panel.grid.major.x=element_line(size=0.25, color="gray", linetype="dotted"), -->
+<!--  #    panel.grid.minor.x=element_line(size=0.25, color="gray", linetype="dotted"), -->
+<!--  #    axis.title=element_text(size=10), -->
+<!--  #    plot.title=element_text(size=14, hjust=0.5, face="bold"), -->
+<!--  #    legend.title=element_blank(), -->
+<!--  #    legend.justification = "top" -->
+<!--  #  ) + -->
+<!--  #  scale_x_continuous(minor_breaks=c(0:23)) + -->
+<!--  #  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}, n.breaks = 10) + -->
+<!--  #  labs(title="Hourly Distribution of Tweets by Awareness", x="Hour", y="Number of Tweets") -->
+<!--  #p1 -->
+<!--  # -->
+<!--  # -->
+<!--  #a<-pivot_wider(twt.p1, id_cols=post_hour, names_from=aware, values_from = tweet_ct) -->
+<!--  #a<-a%>% -->
+<!--  #  mutate(no_awareness=no_awareness/total, -->
+<!--  #  yes_awareness=yes_awareness/total)%>% -->
+<!--  #  select(post_hour,no_awareness, yes_awareness)%>% -->
+<!--  #  pivot_longer(!post_hour, names_to="aware", values_to="prop") -->
+<!--  #ggplot(a, aes(x=post_hour, y=prop, group=aware))+geom_line() -->
+<!--  #  -->
+<!--  #``` -->
+<!--  #According to the graph above, all three lines share the same shape. -->
+<!--  # -->
+<!--  #This signifies that posted hour is not correlated to awareness. -->
+<!--  # -->
+<!--  #This hypothesis can be tested by performing the correlation test (calculating Pearson's correlation coefficient and testing the  #hypothesis of significant correlation) -->
+<!--  # -->
+<!--  #```{r} -->
+<!--  #cor1<-twt%>% -->
+<!--  #  mutate(post_hour=hour(post_datetime), -->
+<!--  #         aware=if_else(comment_num+like_num+retweet_num>0,0,1))%>% -->
+<!--  #  select(post_hour, aware) -->
+<!--  # -->
+<!--  #cor.test(cor1$post_hour, cor1$aware, method="spearman") -->
+<!--  #``` -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  #if it is correlated whether the tweet has been commented, liked, or retweeted. -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  #Next, I will perform general analysis on the content of the tweets. -->
+<!--  #```{r} -->
+<!--  #twt$body_len=sapply( -->
+<!--  #  lapply( -->
+<!--  #    strsplit(twt$body," ") #splitting strings by " " -->
+<!--  #         , function(x){x[!x==""]}) #using lapply to delete blank elements -->
+<!--  #  , length) #counting the number of elements in the list. -->
+<!--  #summary(twt$body_len) -->
+<!--  # -->
+<!--  #a<-twt%>% -->
+<!--  #  arrange(desc(twt$body_len))%>% -->
+<!--  #  head(100) -->
+<!--  #``` -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  #```{r} -->
+<!--  #  #group_by(Referred_Company_Count) %>% -->
+<!--  #  #summarize(n_occurrence=count(Referred_Company_Count)) -->
+<!--  #  #arrange(desc(Referred_Company_Count)) %>% #sort(Referred_Company_Count, decreasing=TRUE) %>% -->
+<!--  #  #head(20) -->
+<!--  #test<-twt%>% -->
+<!--  #  filter(post_date=="") -->
+<!--  #``` -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
+<!--  # -->
