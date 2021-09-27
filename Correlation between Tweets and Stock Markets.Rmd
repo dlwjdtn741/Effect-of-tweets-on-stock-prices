@@ -798,7 +798,6 @@ twt_w <- twt %>%
   )
 
 twt_w %>%
-  select(writer, tweet_ct, p_tweet_ct) %>%
   arrange(desc(tweet_ct)) %>%
   head(nrow(twt_w) / 100) %>%
   mutate( 
@@ -806,6 +805,7 @@ twt_w %>%
     percent_of_total = sprintf("%.1f%%", p_tweet_ct * 100)
   ) %>%
   head(20) %>%
+  select(writer, tweet_ct, percent_of_total) %>%
   gt() %>%
   cols_label(
     writer = "Writer",
@@ -817,7 +817,6 @@ twt_w %>%
   )
 
 twt_w %>%
-  select(writer, comment_num, p_comment_num) %>%
   arrange(desc(comment_num)) %>%
   head(nrow(twt_w) / 100) %>%
   mutate( 
@@ -825,6 +824,7 @@ twt_w %>%
     percent_of_total = sprintf("%.1f%%", p_comment_num * 100)
   )%>%
   head(20) %>%
+  select(writer, comment_num, percent_of_total) %>%
   gt() %>%
   cols_label(
     writer = "Writer",
@@ -836,7 +836,6 @@ twt_w %>%
   )
 
 twt_w %>%
-  select(writer, like_num, p_like_num) %>%
   arrange(desc(like_num)) %>%
   head(nrow(twt_w) / 100)%>%
   mutate( 
@@ -844,6 +843,7 @@ twt_w %>%
     percent_of_total = sprintf("%.1f%%", p_like_num * 100)
   )%>%
   head(20) %>%
+  select(writer, like_num, percent_of_total) %>%
   gt() %>%
   cols_label(
     writer = "Writer",
@@ -855,7 +855,6 @@ twt_w %>%
   )
 
 twt_w %>%
-  select(writer, retweet_num, p_retweet_num) %>%
   arrange(desc(retweet_num)) %>%
   head(nrow(twt_w) / 100)%>%
   mutate( 
@@ -863,6 +862,7 @@ twt_w %>%
     percent_of_total = sprintf("%.1f%%", p_retweet_num * 100)
   )%>%
   head(20) %>%
+  select(writer, retweet_num, percent_of_total) %>%
   gt() %>%
   cols_label(
     writer = "Writer",
@@ -1855,3 +1855,6 @@ Comparing to the single tagged tweets increased the correlation, but only slight
 
 &nbsp;
 &nbsp;
+&nbsp;
+&nbsp;
+
