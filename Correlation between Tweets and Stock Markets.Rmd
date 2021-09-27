@@ -1,62 +1,92 @@
 ---
-title: "Correlation between Tweets and Stock Markets"
+title: "Correlation between Tweets and Stock Market"
 author: "Amy Lee"
-date: "8/13/2021"
-output: 
+date: "9/8/2021"
+output:
   html_document:
     keep_md: yes
+  pdf_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-#### Used Packages
-
-```{r message=FALSE, warning=FALSE}
-library(easypackages)
-libraries("dplyr",
-          "janitor",
-          "lubridate",
-          "ggplot2",
-          "tidyr",
-          "car",
-          "caret",
-          "ggpubr"
-          )
-```
 ```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
-mymachine="/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
+mymachine <- "/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
 ```
 
 # Introduction
 
-While I was looking for an interesting project to work on, I came across a Kaggle post called"Tweets about the Top Companies from 2015 and 2020".
+&nbsp;
+
+While I was looking for an interesting project to work on, I came across a Kaggle post called "Tweets about the Top Companies from 2015 and 2020".
 
 (link : https://www.kaggle.com/omermetinn/tweets-about-the-top-companies-from-2015-to-2020)
 
-It includes three data sets.
+It includes the following three data sets.
   
 ```{r message=FALSE, warning=FALSE}
-twt_to_cmpy=read.csv(paste(mymachine,'/archive/Company_Tweet.csv', sep=""))
-stk=read.csv(paste(mymachine,'/archive/CompanyValues.csv', sep=''))
-twt=read.csv(paste(mymachine,'/archive/Tweet.csv', sep=''))
+twt_to_cmpy <- read.csv(paste(mymachine,'/archive/Company_Tweet.csv', sep=""))
+stk <- read.csv(paste(mymachine,'/archive/CompanyValues.csv', sep=''))
+twt <- read.csv(paste(mymachine,'/archive/Tweet.csv', sep=''))
 ```
 
-Using these, I intend to analyze the correlation between Tweets and company's stock prices.
+Using these, I intend to analyze the correlation between Tweets and company's stock.
 
+#### Used Packages
 
-## Exploratory Analysis
+```{r message=FALSE, warning=FALSE}
+library(easypackages)
+libraries(
+  "dplyr",
+  "lubridate",
+  "ggplot2",
+  "tidyr",
+  "ggpubr",
+  "ggupset",
+  "gt",
+  "scales"
+  )
+```
 
-###1. Datasets
-####a) Company_Tweet Dataset
+&nbsp;
 
-```{r results = hold}
+# Exploratory Analysis
+
+&nbsp;
+
+### 1. Each Datasets
+
+&nbsp;
+
+#### a) Company_Tweet (twt_to_cmpy) Dataset
+
+&nbsp;
+
+```{r results = "hold"}
 str(twt_to_cmpy)
-paste("number of distinct tweets =", n_distinct(twt_to_cmpy$tweet_id))
-paste("company being referred =", paste(unique(twt_to_cmpy$ticker_symbol), collapse=", "))
-paste("number of NA or blanks in tweet_id =", sum(is.na(twt_to_cmpy$tweet_id),nrow(twt_to_cmpy[twt_to_cmpy$tweet_id=="",])))
-paste("number of NA or blanks in ticker_symbol =", sum(is.na(twt_to_cmpy$ticker_symbol),nrow(twt_to_cmpy[twt_to_cmpy$ticker_symbol=="",])))
+paste(
+  "number of distinct tweets =", 
+   n_distinct(twt_to_cmpy$tweet_id)
+  )
+paste(
+  "company being referred =", 
+   paste(unique(twt_to_cmpy$ticker_symbol), collapse = ", ")
+  )
+paste(
+  "number of NA or blanks in tweet_id =", 
+   sum(
+     is.na(twt_to_cmpy$tweet_id), nrow(twt_to_cmpy[twt_to_cmpy$tweet_id == "", ])
+     )
+  )
+paste(
+  "number of NA or blanks in ticker_symbol =", 
+   sum(
+     is.na(twt_to_cmpy$ticker_symbol), nrow(twt_to_cmpy[twt_to_cmpy$ticker_symbol == "", ])
+     )
+  )
 ```
 
 This data set contains two columns.
@@ -70,37 +100,145 @@ Does this mean tweets can be related to more than one company at a time?
 Let's find out.
 
 ```{r}
-tmp<- twt_to_cmpy%>%
+rf_cmpy <- twt_to_cmpy %>%
   group_by(tweet_id) %>%
-  summarize(Referred_Company_Count_per_Tweet=n_distinct(ticker_symbol)) %>%
-  count(Referred_Company_Count_per_Tweet) %>%
-  rename(n_occurrence=n)
-print(tmp)
-paste("correct row number =", sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence))
+  summarize(com_ct = n_distinct(ticker_symbol)) %>%
+  count(com_ct)
+
+rf_cmpy %>%
+  gt() %>%
+  tab_header(
+    title = "Tweet Counts by Tagged Companies Count"
+  ) %>%
+  fmt_number(
+    columns = "n", 
+    sep_mark = ","
+  ) %>%
+  cols_label(
+    com_ct = "Tagged Companies Count",
+    n = "Tweet Counts"
+  )
+  
+paste(
+  "correct row number should be", 
+   sum(rf_cmpy$com_ct * rf_cmpy$n)
+  )
 ```
-According to the above result, tweets can be related to multiple companies at a time. Also, the data set should have `r format(sum(tmp$Referred_Company_Count_per_Tweet*tmp$n_occurrence), big.mark=",")` rows while the table actually has `r format(nrow(twt_to_cmpy),big.mark=",")`.
+
+According to the above result, tweets can be related to multiple companies at a time. 
+
+Also, the data set should have `r format(sum(rf_cmpy$Referred_Company_Count_per_Tweet*rf_cmpy$n_occurrence), big.mark=",")` rows but the table actually has `r format(nrow(twt_to_cmpy),big.mark=",")`.
+
 This means some rows are duplicated and that needs to be eliminated.
 
 ```{r}
-twt_to_cmpy<-unique(twt_to_cmpy)
+twt_to_cmpy <- unique(twt_to_cmpy)
 nrow(twt_to_cmpy)
 ```
 
+Now, let's look into which company/combinations of companies are being referred the most.
 
+```{r fig.dim=c(10,6)}
+twt_to_cmpy_ut <- twt_to_cmpy %>%
+  group_by(tweet_id) %>%
+  summarize(company = paste(ticker_symbol, collapse = "&"))
 
-####b) CompanyValues Dataset
-```{r result=hold}
+twt_to_cmpy_u <- twt_to_cmpy %>%
+  group_by(tweet_id) %>%
+  summarize(company = list(ticker_symbol))
+
+twt_to_cmpy_u %>%
+  ggplot(aes(x = company)) +
+  geom_bar() +
+  geom_text(
+    stat = 'count', 
+    aes(label = format(after_stat(count), big.mark = ",")), 
+    size = 2.5, 
+    angle = 75,
+    hjust = 0
+    ) +
+  scale_x_upset() +
+  scale_y_continuous(
+    limits = c(0,1300000), 
+    labels = function(x) {format(x, big.mark=",", scientific=FALSE)}
+    ) +
+  labs(
+    title = "Tweet Count by Tagged Company Combinations",
+        x = "Company Combination",
+        y = "Tweet Count"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+```
+
+According to the above, AAPL is the most tagged company while GOOGL is the least. 
+
+Also, there is a significant drop in tweet counts when more than one companies are being tagged in a tweet.
+
+I will create a column called "mult_tag" where 0 will mean the tweet only tags one company while 1 means it has tagged multiple. 
+
+```{r}
+twt_to_cmpy <- twt_to_cmpy %>%
+  group_by(tweet_id) %>%
+  mutate(mult_tag = ifelse(n() > 1, 1, 0))
+```
+
+&nbsp;
+
+#### b) CompanyValues (stk) Dataset
+
+&nbsp;
+
+```{r results = "hold"}
 str(stk)
-stk$day_date=as.Date(stk$day_date)
-paste("Date Range = min:", min(stk$day_date),"max:", max(stk$day_date))
-paste("companies included in the data set =", paste(unique(stk$ticker_symbol), collapse=", "))
-paste("number of NA or blanks in ticker_symbol =", sum(is.na(stk$ticker_symbol),nrow(stk[stk$ticker_symbol=="",])))
-paste("number of NA in day_date =", sum(is.na(stk$day_date)))
-paste("number of NA or blanks in close_value =", sum(is.na(stk$close_value),nrow(stk[stk$close_value=="",])))
-paste("number of NA or blanks in open_value =", sum(is.na(stk$open_value),nrow(stk[stk$open_value=="",])))
-paste("number of NA or blanks in high_value =", sum(is.na(stk$high_value),nrow(stk[stk$high_value=="",])))
-paste("number of NA or blanks in low_value =", sum(is.na(stk$low_value),nrow(stk[stk$low_value=="",])))
-paste("number of NA or blanks in volume =", sum(is.na(stk$volume),nrow(stk[stk$volume=="",])))
+stk$day_date <- as.Date(stk$day_date)
+paste(
+  "Date Range = min:", min(stk$day_date),
+               "max:", max(stk$day_date)
+  )
+paste(
+  "companies included in the data set =", 
+  paste(unique(stk$ticker_symbol), collapse=", ")
+  )
+paste(
+  "number of NA or blanks in ticker_symbol =", 
+  sum(
+    is.na(stk$ticker_symbol), nrow(stk[stk$ticker_symbol == "", ])
+    )
+  )
+paste(
+  "number of NA in day_date =", 
+  sum(is.na(stk$day_date))
+  )
+paste(
+  "number of NA or blanks in close_value =", 
+  sum(
+    is.na(stk$close_value), nrow(stk[stk$close_value == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in open_value =", 
+  sum(
+    is.na(stk$open_value), nrow(stk[stk$open_value == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in high_value =", 
+  sum(
+    is.na(stk$high_value), nrow(stk[stk$high_value == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in low_value =", 
+  sum(
+    is.na(stk$low_value), nrow(stk[stk$low_value == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in volume =", 
+  sum(
+    is.na(stk$volume), nrow(stk[stk$volume == "", ])
+    )
+  )
 ```
 
 Looking at the structure of the data set, it doesn't seem to require much cleaning either.
@@ -108,758 +246,1612 @@ Looking at the structure of the data set, it doesn't seem to require much cleani
 But just to make sure, I will quickly check if the data includes stock info for every stocks each day.
 
 ```{r}
-stk%>%
-  group_by(day_date)%>%
-  summarize(daily_recorded_companies=n_distinct(ticker_symbol))%>%
-  arrange(daily_recorded_companies, descending=FALSE)%>%
-  count(daily_recorded_companies)%>%
-  rename(n_occurrence=n)
-
+stk %>%
+  group_by(day_date) %>%
+  summarize(d_com_ct = n_distinct(ticker_symbol)) %>%
+  arrange(d_com_ct, descending = FALSE) %>%
+  count(d_com_ct) %>%
+  rename(
+    "Number of Days" = n,
+    "Tagged Companies Count" = d_com_ct
+    ) %>%
+  gt() %>%
+  tab_header(
+    title = "Number of Days by Tagged Companies Count"
+  ) %>%
+  fmt_number(
+    columns = "Number of Days", 
+    sep_mark = ",",
+    decimals = 0
+  )
 ```
+
 It seems like there are days where some companies' stock data is not recorded.
 
 Let's take a deeper look into it.
 
 ```{r}
-stk%>%
-  group_by(ticker_symbol)%>%
-  summarize(min_date=min(day_date), max_date=max(day_date))
+stk %>%
+  group_by(ticker_symbol) %>%
+  summarize("Min. Date" = min(day_date), "Max. Date" = max(day_date)) %>%
+  gt() %>%
+  tab_header(
+    title = "First and Last Date Recorded for Each Comapny"
+  ) %>%
+  cols_label(
+    ticker_symbol = "Company"
+  )
 
-stk%>%
-  group_by(day_date)%>%
-  summarize(daily_recorded_companies=n_distinct(ticker_symbol))%>%
-  group_by(daily_recorded_companies)%>%
-  summarize(min_date=min(day_date), max_date=max(day_date))
-
+stk %>%
+  group_by(day_date) %>%
+  summarize(daily_recorded_companies = n_distinct(ticker_symbol)) %>%
+  group_by(daily_recorded_companies) %>%
+  summarize("Min. Date" = min(day_date), "Max. Date" = max(day_date)) %>%
+  gt() %>%
+  tab_header(
+    title = "First and Last Date Recorded for Tagged Companies Count"
+  ) %>%
+  cols_label(
+    daily_recorded_companies = "Tagged Companies Count"
+  )
 ```
 
-GOOG and TSLA data starts on different days.
+Data for GOOG and TSLA starts on different days.
 
-But other than that, the it seems to be continuous through out the days.
+But other than that, every company seems to have continuous data through out.
 
-####c) Tweet Dataset
+Now, let's look at how the stock price changes over time.
 
-```{r result=hold}
+Close value will be utilized as the stock prices.
+
+```{r fig.dim=c(12,10), out.width="90%", message=FALSE, warning=FALSE}
+stk %>%
+  ggplot(aes(x = day_date, group = ticker_symbol, color = ticker_symbol)) +
+  geom_line(aes(y = close_value)) +  
+  geom_smooth(aes(y = close_value), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+  stat_regline_equation(
+    aes(y = close_value, label = paste(..eq.label.., ..rr.label.., sep="~~~")), 
+    show.legend = FALSE, 
+    label.x.npc = 0.1, 
+    label.y.npc = 1, 
+    size = 3.5
+    ) +
+  scale_y_continuous(labels = function(x) {paste(format(x, suffix = "$", big.mark = ","), "$")}) +
+  labs(
+    title = "Stock Prices Over Time by Ticker Symbols",
+        x = "Date", 
+        y = "Closing Price", 
+    color = "Legend"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 18))
+```
+
+Stock prices for every companies have increased over time.
+
+AMZN had the biggest increase while MSFT has the smallest.
+
+GOOG and GOOGL seems to generally have the same value over time. 
+
+Now, let's take a look at how the traded volume changes over time.
+
+```{r fig.dim=c(12,10), out.width="90%"}
+stk %>%
+  ggplot(aes(x = day_date, group = ticker_symbol, color = ticker_symbol)) +
+  geom_line(aes(y = volume)) +  
+  scale_y_continuous(labels = function(x) {format(x, big.mark = ",", scientific=FALSE)}) +
+  labs(
+    title = "Volume Traded Over Time by Ticker Symbols",
+        x = "Date", 
+        y = "Traded Stock Volume", 
+    color = "Legend"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 18))
+```
+
+While MSFT and AAPL has comparatively lower close value, they are being traded more than any other companies.
+
+&nbsp;
+
+#### c) Tweet (twt) Dataset
+
+&nbsp;
+
+```{r results = "hold"}
 str(twt)
-twt$post_datetime=as_datetime(twt$post_date)
-twt$post_date=as_date(twt$post_datetime)
-paste("Date Range = min:", min(twt$post_date),"max:", max(twt$post_date))
-paste("number of NA or blanks in tweet_id =", sum(is.na(twt$tweet_id),nrow(twt[twt$tweet_id=="",])))
-paste("number of NA or blanks in writer =", sum(is.na(twt$writer),nrow(twt[twt$writer=="",])))
-paste("number of NA in post_date =", sum(is.na(twt$post_date)))
-paste("number of NA or blanks in body =", sum(is.na(twt$body),nrow(twt[twt$body=="",])))
-paste("number of NA or blanks in comment_num =", sum(is.na(twt$comment_num),nrow(twt[twt$comment_num=="",])))
-paste("number of NA or blanks in retweet_num =", sum(is.na(twt$retweet_num),nrow(twt[twt$retweet_num=="",])))
-paste("number of NA or blanks in like_num =", sum(is.na(twt$like_num),nrow(twt[twt$like_num=="",])))
-paste("number of NA in post_datetime =", sum(is.na(twt$post_datetime)))
+twt$post_datetime <- as_datetime(twt$post_date)
+twt$post_date <- as_date(twt$post_datetime)
+paste(
+  "Date Range = min:", min(twt$post_date),
+               "max:", max(twt$post_date)
+  )
+paste(
+  "number of distinct tweets =", 
+  n_distinct(twt$tweet_id)
+  )
+paste(
+  "number of NA or blanks in tweet_id =", 
+  sum(
+    is.na(twt$tweet_id), nrow(twt[twt$tweet_id == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in writer =", 
+  sum(
+    is.na(twt$writer), nrow(twt[twt$writer == "", ])
+    )
+  )
+paste(
+  "number of NA in post_date =", 
+  sum(is.na(twt$post_date))
+  )
+paste(
+  "number of NA or blanks in body =", 
+  sum(
+    is.na(twt$body), nrow(twt[twt$body == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in comment_num =", 
+  sum(
+    is.na(twt$comment_num), nrow(twt[twt$comment_num == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in retweet_num =", 
+  sum(
+    is.na(twt$retweet_num), nrow(twt[twt$retweet_num == "", ])
+    )
+  )
+paste(
+  "number of NA or blanks in like_num =", 
+  sum(
+    is.na(twt$like_num), nrow(twt[twt$like_num == "", ])
+    )
+  )
+paste(
+  "number of NA in post_datetime =", 
+  sum(is.na(twt$post_datetime))
+  )
 ```
 
-This data set does not have any NA values either. But, the record starts from 2015-01-01 to 2019-12-31.
+First of all, the data starts from 2015-01-01 to 2019-12-31.
 
 Therefore, I will use the CompanyValue in the same time frame only.
 
 ```{r}
-stk<-stk%>%
+stk <- stk %>%
   filter(between(day_date, as.Date("2015-01-01"), as.Date("2019-12-31")))
 ```
 
-First, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
+Secondly, there are more rows than the number of tweet_id. Which means, some tweet_id's are being duplicated. 
 
-```{r results=hold}
-ggplot(twt, aes(x=comment_num)) +
-  geom_histogram(binwidth=20, color="gray", fill="gray") +
-  stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
-  scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
-  labs(title="Distribution of comment_num", y="frequency",x="comment_num") +
-  theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
+Let's see if the table contain any duplicated rows.
 
-ggplot(twt, aes(x=retweet_num)) +
-  geom_histogram(binwidth=20, color="gray", fill="gray") +
-  stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
-  scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
-  labs(title="Distribution of retweet_num", y="frequency",x="retweet_num") +
-  theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
-  
-ggplot(twt, aes(x=like_num)) +
-  geom_histogram(binwidth=20, color="gray", fill="gray") +
-  stat_bin(binwidth=20, geom="text", aes(label=format(..count.., big.mark=",")), angle=75, size=3, hjust=0, vjust=0) +  
-  scale_y_continuous(limits=c(0,4300000), labels = function(x) format(x, big.mark=",", scientific = FALSE)) +
-  labs(title="Distribution of like_num", y="frequency",x="like_num") +
-  theme(plot.title=element_text(hjust=0.5, size=18, face="bold"))
+```{r}
+twt <- unique(twt)
+nrow(twt)
+n_distinct(twt$tweet_id)
+n_distinct(twt_to_cmpy$tweet_id)
 ```
 
-So, most of the tweets don't have any comments, likes, or hasn't been retweeted.
+The data table does not have any duplicated rows.
+
+Let's find out what is causing the duplication.
+
+```{r}
+twt_dup <- twt %>%
+  group_by(tweet_id) %>%
+  mutate(tweet_id_count = n()) %>%
+  filter(tweet_id_count > 1) %>%
+  mutate(tweet_id = format(tweet_id, scientific = FALSE)) %>%
+  arrange(desc(tweet_id_count), desc(tweet_id), desc(writer))
+
+twt_dup %>%
+  filter(
+    retweet_num == max(twt_dup$retweet_num) |
+    comment_num == max(twt_dup$comment_num) |
+       like_num == max(twt_dup$like_num)
+    ) %>%
+  select(tweet_id) %>%
+  unique() %>%
+  left_join(twt_dup, by = "tweet_id") %>%
+  arrange(desc(tweet_id), desc(writer)) %>%
+  gt() %>%
+  tab_header(
+    title = "Tweets with Max. Retweet, Comment and Like Values for the Duplicated Data"
+  )
+
+twt_dup %>%
+  group_by(tweet_id) %>%
+  summarize(disct_body = n_distinct(body)) %>%
+  ggplot(aes(x = disct_body)) +
+  geom_bar(fill = "lightgray") +
+  geom_text(
+    stat = "count", 
+    aes(label = format(after_stat(count), big.mark = ",")),
+    position = position_stack(vjust = 0.5)
+    ) +
+  labs(
+    title = "Counting of Distinct Body Content Count per Tweet ID",
+        x = "Distinct Count of Body Content per Tweet ID",
+        y = "Tweet Counts"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+twt_dup %>%
+  group_by(tweet_id) %>%
+  summarize(disct_writer = n_distinct(writer)) %>%
+  ggplot(aes(x = disct_writer)) +
+  geom_bar(fill = "lightgray") +
+  geom_text(
+    stat = "count", 
+    aes(label = format(after_stat(count), big.mark = ",")), 
+    position = position_stack(vjust = 0.5)
+    ) +
+  labs(
+    title = "Counting of Distinct Writer Count per Tweet ID",
+        x = "Distinct Count of Writer per Tweet ID",
+        y = "Tweet Counts"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+```
+
+It seems like some duplicates are caused by the indistinct body contents, writer or both columns.
+
+Testing some of these tweets (paste https://twitter.com/anyuser/status/tweet_id replacing tweet_id with one of the value), there wasn't an indicator that dictates which body or writer is currently being used for that particular tweet_id. 
+
+Also, the comment_num, retweet_num, and like_num columns does not carry over between the duplicated tweet id. 
+
+Meaning, rows with same tweet_id doesn't necessarily share the same value for the three columns.
+
+I am going to find out if removing these data will be possible.
+
+Because, even though these duplicates does not occur often, I would not like to double count the values when joining with the Company_Tweet data set. 
+
+I am going to analyze their proportion and will remove them if they take up less than 5% to the total.
+
+```{r results = "hold"}
+summary(twt_dup)
+
+twt_dup %>%
+  group_by(post_date) %>%
+  summarize(
+    dup_n = n_distinct(tweet_id),
+    dup_nrow = n()
+    ) %>%
+  left_join(
+    twt %>%
+      group_by(post_date) %>%
+      summarize(
+        total_n = n_distinct(tweet_id),
+        total_nrow = n()
+        )
+    , by='post_date'
+    ) %>%
+  mutate(
+    p_of_tot  = sprintf("%.1f%%", dup_n * 100 / total_n),
+    p_of_tot_row = sprintf("%.1f%%", dup_nrow * 100 / total_nrow)
+    ) %>%
+  arrange(desc(dup_n / total_n)) %>%
+  select(post_date, dup_n, total_n, p_of_tot, dup_nrow, total_nrow, p_of_tot_row) %>%
+  head(20) %>%
+  gt() %>%
+  tab_header(
+    title = "Proportion of Duplicated Data to the Total - Top 20"
+  ) %>%
+  tab_spanner(
+    label = "by Tweets",
+    columns = c(dup_n, total_n, p_of_tot)
+  ) %>%
+  tab_spanner(
+    label = "by Rows",
+    columns = c(dup_nrow, total_nrow, p_of_tot_row)
+  ) %>%
+  cols_label(
+    dup_n = "Dup. Count", 
+    total_n = "Total Count", 
+    p_of_tot = "% of Total", 
+    dup_nrow = "Dup. Count", 
+    total_nrow = "Total Count", 
+    p_of_tot_row = "% of Total",
+    post_date = "Post Date"
+  )
+```
+
+The result above show that highest % total of the duplicated by post date is less than 1.2% in terms of rows and 0.6% in terms of tweet_id. 
+
+Thus, if the duplicated data is deleted, it will only affect less than 1.2% of data each day.
+
+```{r}
+twt_dup_sum <- twt_dup %>%
+  group_by(post_date) %>%
+  summarize(
+    dup_com_tot = sum(comment_num),
+    dup_ret_tot = sum(retweet_num),
+    dup_lik_tot = sum(like_num)
+    ) %>%
+  left_join(
+    twt %>%
+      group_by(post_date) %>%
+      summarize(
+        com_tot = sum(comment_num),
+        ret_tot = sum(retweet_num),
+        lik_tot = sum(like_num)
+        )
+    , by="post_date"
+  ) %>%
+  mutate(
+    com_rate = dup_com_tot/com_tot,
+    ret_rate = dup_ret_tot/ret_tot,
+    lik_rate = dup_lik_tot/lik_tot
+    )
+
+twt_dup_sum %>%
+  arrange(desc(dup_com_tot + dup_ret_tot + dup_lik_tot)) %>%
+  mutate(
+    p_of_com_tot = sprintf('%.2f%%', com_rate * 100),
+    p_of_ret_tot = sprintf('%.2f%%', ret_rate * 100),
+    p_of_lik_tot = sprintf('%.2f%%', lik_rate * 100)
+    ) %>%
+  select(
+    post_date, 
+    dup_com_tot, com_tot, p_of_com_tot,
+    dup_ret_tot, ret_tot, p_of_ret_tot,
+    dup_lik_tot, lik_tot, p_of_lik_tot
+    ) %>%
+  head(20) %>%
+  gt() %>%
+  tab_header(
+    title = "Proportion of Comment, Like, Retweet Count of the Duplicated Data to the Total - Top 20"
+  ) %>%
+  tab_spanner(
+    label = "Comments",
+    columns = c(dup_com_tot, com_tot, p_of_com_tot)
+  ) %>%
+  tab_spanner(
+    label = "Likes",
+    columns = c(dup_lik_tot, lik_tot, p_of_lik_tot)
+  ) %>%
+  tab_spanner(
+    label = "Retweets",
+    columns = c(dup_ret_tot, ret_tot, p_of_ret_tot)
+  ) %>%
+  cols_label(
+    post_date = "Post Date", 
+    dup_com_tot = "Dup. Count", com_tot = "Total Count", p_of_com_tot = "% of Total",
+    dup_ret_tot = "Dup. Count", ret_tot = "Total Count", p_of_ret_tot = "% of Total",
+    dup_lik_tot = "Dup. Count", lik_tot = "Total Count", p_of_lik_tot = "% of Total"
+  )
+```
+
+This shows the total values of the comment, retweet and like number for both duplicated and original data set, and the % of total represents the proportion of the duplicated values to the total.
+
+```{r message=FALSE, warning=FALSE}
+twt_dup_sum %>%
+  ungroup() %>%
+  summarize(
+    "max_com_%_of_tot" = max(com_rate),
+    "max_ret_%_of_tot" = max(ret_rate),
+    "max_lik_%_of_tot" = max(lik_rate)
+    ) %>%
+  mutate_all(funs(sprintf("%.2f%%", . * 100)))
+```
+
+This table shows the maximum value of the % total for the three values.
+
+It means that, when the duplicated values are deleted, it will affect less than the percentages above for the corresponding columns on the days that contains the duplicates. 
+
+Since it seems like the impact would be less than 5% for each days, I believe it would be best to work without the duplicated rows.
+
+```{r}
+twt <- twt %>%
+  left_join(
+    twt_dup %>%
+      select(tweet_id) %>%
+      unique() %>%
+      mutate(
+        mark = 1,
+        tweet_id=as.numeric(tweet_id)
+        )
+    , by = "tweet_id"
+  ) %>%
+  filter(is.na(mark) == TRUE) %>%
+  select(-mark)
+```
+
+Finally, let's see why some rows have blank writer column.
+
+```{r}
+twt %>%
+  mutate(tweet_id = format(tweet_id, scientific = FALSE)) %>%
+  filter(writer == "") %>%
+  head(10)
+```
+
+I originally thought the absence of writer was the result of a deleted tweets. But after testing a few, that seems to be false.
+
+However, it might be a good idea to replace the blank value with a unique name to prevent it from being treated as a single writer. 
+
+```{r}
+twt <- twt %>%
+  left_join(
+    twt %>%
+      filter(writer == "") %>%
+      select(tweet_id) %>%
+      mutate(blank_writer = paste("blank_", row_number(), sep = "")) #naming blank writer as "blank_rownumber"
+    , by = "tweet_id"
+  ) %>%
+  mutate(writer = paste(writer, ifelse(is.na(blank_writer), "", blank_writer), sep = "")) %>%
+  select(-blank_writer)
+```
+
+Now that the table has been cleaned, I'd like to see how distributed "comment_num","retweet_num" and "like_num" values are.
+
+```{r results="hold"}
+ggplot(twt, aes(x = comment_num)) +
+  geom_histogram(binwidth = 20, color = "gray", fill = "gray") +
+  stat_bin(
+    binwidth = 20, 
+    geom = "text", 
+    aes(label = format(..count.., big.mark=",")), 
+    angle = 75, 
+    size = 3, 
+    hjust = 0, 
+    vjust = 0
+    ) +  
+  scale_y_continuous(limits = c(0,4300000), labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+  labs(
+    title = "Distribution of comment_num", 
+        y = "Tweet Count",
+        x = "comment_num"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"))
+
+ggplot(twt, aes(x = retweet_num)) +
+  geom_histogram(binwidth = 20, color = "gray", fill = "gray") +
+  stat_bin(
+    binwidth = 20, 
+    geom = "text", 
+    aes(label = format(..count.., big.mark = ",")), 
+    angle = 75, 
+    size = 3, 
+    hjust = 0, 
+    vjust = 0
+    ) +  
+  scale_y_continuous(limits = c(0,4300000), labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+  labs(
+    title = "Distribution of retweet_num", 
+        x = "retweet_num",
+        y = "Tweet Count") +
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"))
+  
+ggplot(twt, aes(x = like_num)) +
+  geom_histogram(binwidth = 20, color = "gray", fill = "gray") +
+  stat_bin(
+    binwidth = 20, 
+    geom = "text", 
+    aes(label = format(..count.., big.mark = ",")), 
+    angle = 75, 
+    size = 3, 
+    hjust = 0, 
+    vjust = 0
+    ) +  
+  scale_y_continuous(limits = c(0,4300000), labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+  labs(
+    title = "Distribution of like_num",
+        x = "like_num", 
+        y = "Tweet Count"
+    ) +
+  theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold"))
+```
+
+So, most of the tweets don't have any comments, likes, or haven't been retweeted.
 
 Let's see the ratio of 0 to non-zero values of these three columns.
 
 ```{r}
-twt<-twt%>%
-  mutate(yesno_comment=if_else(comment_num==0,"no_value","yes_value"),
-         yesno_retweet=if_else(retweet_num==0,"no_value","yes_value"),
-         yesno_like=if_else(like_num==0,"no_value","yes_value"))
-twt%>%
+twt <- twt %>%
+  mutate(
+    yesno_comment = if_else(comment_num == 0, 0, 1),
+    yesno_retweet = if_else(retweet_num == 0, 0, 1),
+    yesno_like    = if_else(like_num == 0, 0, 1)
+    )
+
+twt %>%
   select(yesno_comment, yesno_retweet, yesno_like) %>%
-  rename(comment=yesno_comment, retweet=yesno_retweet, like=yesno_like)%>%
-  gather(key=type,value=yesno_value)%>%
+  rename(Comment = yesno_comment, Retweet = yesno_retweet, Like = yesno_like) %>%
+  gather(key = type,value = yesno_value) %>%
   group_by(type, yesno_value) %>%
-  summarize(p=sprintf('%.1f%%',n()*100/nrow(twt)), .groups="drop")%>%
-  pivot_wider(id_cols="yesno_value", names_from = "type", values_from=p)
-```
+  summarize(p = sprintf("%.1f%%", n() * 100 / nrow(twt)), .groups = "drop") %>%
+  pivot_wider(id_cols = "yesno_value", names_from = "type", values_from = p) %>%
+  mutate(yesno_value = recode(yesno_value, "0" = "No Value", "1" = "Yes Value")) %>%
+  gt(rowname_col = "yesno_value") %>%
+  tab_header(
+    title = "Proportion of Tweets with Comment, Likes, or Retweets"
+  )
+``` 
 
 From this result, we can see that 85.6% of the whole tweets do not have any comments, 66.8% don't have likes and 83.3% haven't been retweeted.
 
+Now, I'd like to do some analysis on the writers.
 
-Now, I'd like to do some analysis on the writer column.
+Knowing that there are `r sum(is.na(twt$writer),nrow(twt[twt$writer=="",]))` writers within the data table with `r nrow(twt)` rows, we can reasonably assume some of them posted multiple tweets. 
 
-Knowing that there `r sum(is.na(twt$writer),nrow(twt[twt$writer=="",]` writers within the data table with `r nrow(twt)` rows, one can clearly see that some of the writers posted multiple tweets. I would like to see the distribution of the number of tweets each of these writer had posted.
+Let's see the distribution of posted/retweeted tweet counts and the total like/comment counts among these writers.
 
-```{r result=hold}
+```{r result="hold"}
 twt_w <- twt %>%
-  group_by ( writer ) %>%
-  summarize ( tweet_ct = length ( unique( tweet_id ) ) ,
-              comment_num = sum ( comment_num ) ,
-              retweet_num = sum ( retweet_num ) ,
-              like_num = sum ( like_num ) ,
-              tweet_ct_m = ifelse( length ( unique( tweet_id ) ) > 1 , 1, 0 ),
-              .groups = "drop" )
-
-tp100_twtct<-twt_w %>%
-  select( writer , tweet_ct ) %>%
-  mutate( percent_of_total = tweet_ct / sum( twt_w$tweet_ct ) ) %>%
-  arrange( desc ( tweet_ct ) ) %>%
-  head(100)
-
-tp100_cmtct<-twt_w %>%
-  select( writer , comment_num ) %>%
-  mutate( percent_of_total = comment_num / sum( twt_w$comment_num ) ) %>%
-  arrange( desc ( comment_num ) ) %>%
-  head(100)
-
-tp100_rtct<-twt_w %>%
-  select( writer , retweet_num ) %>%
-  mutate( percent_of_total = retweet_num / sum( twt_w$retweet_num ) ) %>%
-  arrange( desc ( retweet_num) ) %>%
-  head(100)
-
-tp100_lkct<-twt_w %>%
-  select( writer , like_num ) %>%
-  mutate( percent_of_total = like_num / sum( twt_w$like_num ) ) %>%
-  arrange( desc ( like_num ) ) %>%
-  head(100)
-
-tp100_twtct%>%
-  mutate( tweet_ct = sapply( tweet_ct , function(x) {format( x , big.mark="," )} ),
-         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
-  )
-tp100_cmtct%>%
-  mutate( comment_num = sapply( comment_num , function(x) {format( x , big.mark="," )} ),
-         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
-  )
-tp100_rtct%>%
-  mutate( retweet_num = sapply( retweet_num , function(x) {format( x , big.mark="," )} ),
-         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
-  )
-tp100_lkct%>%
-  mutate( like_num = sapply( like_num , function(x) {format( x , big.mark="," )} ),
-         percent_of_total = sprintf( "%.1f%%", percent_of_total * 100 )
+  group_by (writer) %>%
+  summarize (
+    tweet_ct = n_distinct(tweet_id),
+    comment_num = sum(comment_num),
+    retweet_num = sum(retweet_num),
+    like_num = sum(like_num),
+    tweet_ct_m = ifelse(n_distinct(tweet_id) > 1 , 1, 0),
+    .groups = "drop"
+    ) %>%
+  mutate (
+    p_tweet_ct = tweet_ct / sum(tweet_ct),
+    p_comment_num = comment_num / sum(comment_num),
+    p_like_num = like_num / sum(like_num),
+    p_retweet_num = retweet_num / sum(retweet_num)
   )
 
+twt_w %>%
+  select(writer, tweet_ct, p_tweet_ct) %>%
+  arrange(desc(tweet_ct)) %>%
+  head(nrow(twt_w) / 100) %>%
+  mutate( 
+    tweet_ct = sapply(tweet_ct, function(x) {format(x, big.mark = ",")}),
+    percent_of_total = sprintf("%.1f%%", p_tweet_ct * 100)
+  ) %>%
+  head(20) %>%
+  gt() %>%
+  cols_label(
+    writer = "Writer",
+    tweet_ct = "Tweet Count",
+    percent_of_total = "% of Total"
+  ) %>%
+  tab_header(
+    title = "Writer with the Most Posted Tweets - Top 20"
+  )
+
+twt_w %>%
+  select(writer, comment_num, p_comment_num) %>%
+  arrange(desc(comment_num)) %>%
+  head(nrow(twt_w) / 100) %>%
+  mutate( 
+    comment_num = sapply(comment_num , function(x) {format(x, big.mark = ",")}),
+    percent_of_total = sprintf("%.1f%%", p_comment_num * 100)
+  )%>%
+  head(20) %>%
+  gt() %>%
+  cols_label(
+    writer = "Writer",
+    comment_num = "Total Comments",
+    percent_of_total = "% of Total"
+  ) %>%
+  tab_header(
+    title = "Writer with the Most Total Comments - Top 20"
+  )
+
+twt_w %>%
+  select(writer, like_num, p_like_num) %>%
+  arrange(desc(like_num)) %>%
+  head(nrow(twt_w) / 100)%>%
+  mutate( 
+    like_num = sapply(like_num, function(x) {format(x, big.mark = ",")}),
+    percent_of_total = sprintf("%.1f%%", p_like_num * 100)
+  )%>%
+  head(20) %>%
+  gt() %>%
+  cols_label(
+    writer = "Writer",
+    like_num = "Total Likes",
+    percent_of_total = "% of Total"
+  ) %>%
+  tab_header(
+    title = "Writer with the Most Total Likes - Top 20"
+  )
+
+twt_w %>%
+  select(writer, retweet_num, p_retweet_num) %>%
+  arrange(desc(retweet_num)) %>%
+  head(nrow(twt_w) / 100)%>%
+  mutate( 
+    retweet_num = sapply(retweet_num , function(x) {format(x, big.mark = ",")}),
+    percent_of_total = sprintf("%.1f%%", p_retweet_num * 100)
+  )%>%
+  head(20) %>%
+  gt() %>%
+  cols_label(
+    writer = "Writer",
+    retweet_num = "Total Retweets",
+    percent_of_total = "% of Total"
+  ) %>%
+  tab_header(
+    title = "Writer with the Most Total Retweets - Top 20"
+  )
 ```
 
-Indeed, above result confirms tweet counts, comment num, like num, and retweet num is heavily weighted on handful of writers.
+Indeed, above result confirms tweet counts, comment num, like num, and retweet num are not equally distributed among the writers.
 
-The top 100 takes up `rsprintf('%.1f%%', sum( tp100_twtct$percent_of_total ) *100 )` of total tweets,`r sprintf('%.1f%%', sum( tp100_cmtct$percent_of_total ) *100 )` of total comments, `r sprintf('%.1f%%', sum( tp100_rtct$percent_of_total ) *100 )` of total retweets and `r sprintf('%.1f%%', sum( tp100_lkct$percent_of_total ) *100 )` of total likes. 
+According to the above code, the top 1% makes up `r sprintf("%.1f%%", sum(head(sort(twt_w$p_tweet_ct, decreasing = TRUE), nrow(twt_w) / 100))  * 100)` of total tweets, `r sprintf("%.1f%%", sum(head(sort(twt_w$p_comment_num, decreasing = TRUE), nrow(twt_w) / 100))  * 100)` of total comments, `r sprintf("%.1f%%", sum(head(sort(twt_w$p_like_num, decreasing = TRUE), nrow(twt_w) / 100))  * 100)` of total likes and `r sprintf("%.1f%%", sum(head(sort(twt_w$p_retweet_num, decreasing = TRUE), nrow(twt_w) / 100))  * 100)` of total retweets. 
 
 ```{r}
-table(twt_w$tweet_ct_m)
+twt_w %>%
+  group_by(tweet_ct_m) %>%
+  summarize(n = n()) %>%
+  mutate(n = format(n, big.mark = ",")) %>%
+  spread(key = tweet_ct_m, value = n) %>%
+  gt() %>%
+  cols_label(
+    "0" = "Irregular User",
+    "1" = "Regular User"
+  ) %>%
+  tab_header(
+    title = "Number of Writers by Activity Level",
+    subtitle = "1 := Posted Tweets > 1, 0 := Posted Tweets == 1"
+  )
 ```
 
-And out of `r length(unique(twt$writer))` writers, `r format(length(twt_w$tweet_ct_m[twt_w$tweet_ct_m==1]), big.mark=",")` users posted more than one tweets while `r format(length(twt_w$tweet_ct_m[twt_w$tweet_ct_m==0]), big.mark=",")` users only posted single tweet.
+And out of `r format(n_distinct(twt$writer), big.mark=",")` writers, `r format(length(twt_w$tweet_ct_m[twt_w$tweet_ct_m==1]), big.mark=",")` users posted more than one tweets while `r format(length(twt_w$tweet_ct_m[twt_w$tweet_ct_m==0]), big.mark=",")` users only posted a single tweet.
+
+Based on this result, I will create a column called "reg_user" where 0 means the writer only posted one tweet and 1 means the opposite.
+
+```{r}
+twt <- twt %>%
+  left_join(
+    twt %>%
+    group_by(writer) %>%
+    summarize(n = n())
+    , by = "writer"
+  ) %>%
+  mutate(reg_user = ifelse(n > 1, 1, 0)) %>%
+  select(-n)
+```
 
 Let's take a look at distribution of tweets over time.
 
-```{r fig.width=2}
-twt_d<-twt %>%
-  mutate(post_date_x=as.Date(format(post_date, "%Y-%m-01")))%>%
-  group_by(post_date_x)%>%
-  summarize(writer_ct = length(unique(writer)),
-            tweet_ct = length(unique(tweet_id)),
-            comment_ct = sum(comment_num),
-            like_ct = sum(like_num),
-            retweet_ct = sum(retweet_num),
-            yescomment_ct=length(yesno_comment[yesno_comment=="yes_value"]),
-            yesretweet_ct=length(yesno_retweet[yesno_retweet=="yes_value"]),
-            yeslike_ct=length(yesno_like[yesno_like=="yes_value"])
-            )
+```{r fig.dim=c(10,6), out.width="90%", message=FALSE, warning=FALSE}
+twt_d <- twt %>%
+  mutate(post_date_x = as.Date(format(post_date, "%Y-%m-01"))) %>%
+  group_by(post_date_x) %>%
+  summarize(
+    writer_ct = n_distinct(writer),
+    tweet_ct = n_distinct(tweet_id),
+    yescomment_ct = length(yesno_comment[yesno_comment == 1]),
+    yesretweet_ct = length(yesno_retweet[yesno_retweet == 1]),
+    yeslike_ct = length(yesno_like[yesno_like == 1])
+    )
 
-colors<-c("Have Comments" = "#C0392B", "Have Likes" = "#2980B9", "Retweeted" = "#17A589")
-ggplot(twt_d, aes(x=post_date_x))+
-  geom_col(aes(y=tweet_ct),fill="white", color="lightgrey")+
+colors <- c("Have Comments" = "#C0392B", "Have Likes" = "#2980B9", "Retweeted" = "#17A589")
+ggplot(twt_d, aes(x = post_date_x)) +
+  geom_col(aes(y = tweet_ct, fill = "Total Tweets"), color = "lightgrey") +
 #lines
-  geom_line(aes(y=yescomment_ct, color="Have Comments"), size=1)+
-  geom_line(aes(y=yesretweet_ct, color="Retweeted") , size=1)+
-  geom_line(aes(y=yeslike_ct, color="Have Likes"), size=1)+
+  geom_line(aes(y = yescomment_ct, color = "Have Comments"), size = 1) +
+  geom_line(aes(y = yesretweet_ct, color="Retweeted") , size = 1) +
+  geom_line(aes(y = yeslike_ct, color = "Have Likes"), size = 1) +
 #trendline
-  geom_smooth(aes(y=tweet_ct, color="grey"), method="lm", se=FALSE, linetype="dashed", size=0.1)+
-  geom_smooth(aes(y=yescomment_ct, color="Have Comments"), method="lm", se=FALSE, linetype="dashed", size=0.5)+
-  geom_smooth(aes(y=yesretweet_ct, color="Retweeted"), method="lm", se=FALSE, linetype="dashed", size=0.5)+
-  geom_smooth(aes(y=yeslike_ct, color="Have Likes"), method="lm", se=FALSE, linetype="dashed", size=0.5)+
+  geom_smooth(aes(y = tweet_ct, color = "black"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+  geom_smooth(aes(y = yescomment_ct, color = "Have Comments"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+  geom_smooth(aes(y = yesretweet_ct, color = "Retweeted"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+  geom_smooth(aes(y = yeslike_ct, color = "Have Likes"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
 #r2
-  stat_regline_equation(aes(y=tweet_ct, label = ..eq.label..), label.x=17000, label.y=67000, size=3.5)+
-  stat_regline_equation(aes(y=yescomment_ct, label = ..eq.label.., color="Have Comments"), label.x=16900, label.y=-100, show.legend=FALSE, size=3.5)+
-  stat_regline_equation(aes(y=yesretweet_ct, label = ..eq.label.., color="Retweeted"), label.x=17700, label.y=7000, show.legend=FALSE, size=3.5)+
-  stat_regline_equation(aes(y=yeslike_ct, label = ..eq.label.., color="Have Likes"), label.x=17100, label.y=25000, show.legend=FALSE, size=3.5)+
-  labs(y="Number of Tweets",
-       x="Year Month",
-       color="Legend")+
-  scale_color_manual(values=colors)
-
-
+  stat_regline_equation(
+    aes(y = tweet_ct, label = ..eq.label..), 
+    label.x = 17000, label.y = 67000, size = 3.5
+    ) +
+  stat_regline_equation(
+    aes(y = yescomment_ct, label = ..eq.label.., color = "Have Comments"), 
+    label.x = 16900, label.y=-100, size=3.5, show.legend=FALSE
+    ) +
+  stat_regline_equation(
+    aes(y = yesretweet_ct, label = ..eq.label.., color = "Retweeted"), 
+    label.x = 17700, label.y = 7000, size = 3.5, show.legend = FALSE
+    ) +
+  stat_regline_equation(
+    aes(y = yeslike_ct, label = ..eq.label.., color = "Have Likes"), 
+    label.x = 17100, label.y = 25000, size = 3.5, show.legend = FALSE
+    ) +
+  labs(
+    title = "Distribution of Tweets over Time",
+        y = "Number of Tweets", 
+        x = "Year Month", 
+     fill = "Legend", 
+    color = NULL
+    ) +
+  scale_fill_manual(values = c("Total Tweets" = "white")) +
+  scale_color_manual(values = colors) +
+  scale_y_continuous(labels = function(x) {format(x, big.mark = ",", scientific = FALSE)}) +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5))
 ```
 
+Above shows the monthly summary of the total tweets, each line representing the total counts of the ones with comments, likes or those that have been retweeted. 
 
+While the number of posted tweets stay consistent over the years, it can be observed that they are more liked, commented and retweeted after 2018 Jan. 
 
+This could signify that the general population's interest in the stock market has started to grow since that time.
 
+This could be a natural outcome since it is said that 2018 was one of the worst years for stock market after the market crash in 2008.
 
-
-There is a huge spike on total like counts after 2018.
-
-Let's see what is going on.
+Let's see how the distinct number of writers change over time compared to the total tweet counts.
 
 ```{r}
-twt_l<-twt%>%
-  select(writer, post_date, like_num)%>%
-  mutate(post_date=year(post_date))%>%
-  group_by(writer, post_date)%>%
-  summarize(like_num=sum(like_num), .groups="drop")%>%
-  pivot_wider(id_cols = writer,names_from = post_date, values_from=like_num, values_fill = 0)
-
-sprintf("%.1f%%",tail(twt_l$"2015"[order(twt_l$"2015")],10)/sum(twt_l$"2015")*100)
-sprintf("%.1f%%",tail(twt_l$"2016"[order(twt_l$"2016")],10)/sum(twt_l$"2016")*100)
-sprintf("%.1f%%",tail(twt_l$"2017"[order(twt_l$"2017")],10)/sum(twt_l$"2017")*100)
-sprintf("%.1f%%",tail(twt_l$"2018"[order(twt_l$"2018")],10)/sum(twt_l$"2018")*100)
-sprintf("%.1f%%",tail(twt_l$"2019"[order(twt_l$"2019")],10)/sum(twt_l$"2019")*100)
-
-
-ggplot(twt_l, aes(x=post_date, y=like_num))+
-  geom_boxplot()
-
+coef <- mean(twt_d$tweet_ct) / mean(twt_d$writer_ct)
+twt_d %>%
+  ggplot(aes(x = post_date_x)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet"), size = 0.8) +
+  geom_line(aes(y = writer_ct * coef, color = "Total Writer"), size = 0.8) +
+  scale_y_continuous(
+    labels = function(x) {format(x, big.mark = ",", scientific = FALSE)}, 
+    sec.axis = sec_axis(
+      ~ . / coef, 
+      name = "Writer Count",
+      labels = function(x) {format(x, big.mark = ",", scientific = FALSE)}
+      )
+    ) +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5)) + 
+  labs(
+    title = "Tweet Count VS. Writer Count",
+    x = "Year Month",
+    y = "Tweet Count",
+    color = "Legend"
+  ) 
 ```
 
+According to the result above, there were less tweet counts in 2017 than 2016 even thought there are more writers comparatively. 
 
+I'd like to see if this is caused by a handful of users' unusual active posting. 
 
-
-
-
-
-
-
-
-
+I will define a column "top_10" based on each users' total tweet count.
 
 ```{r}
-a<-twt%>%
-  mutate(post_year=paste("y",year(post_date), sep=""))%>%
-  group_by(post_year, writer) %>%
-  summarize(like=sum(like_num), .groups="drop")%>%
-  pivot_wider(id_cols=writer, names_from=post_year, values_from=like, values_fill = 0)%>%
-  summarize_if(as.numeric, max)
+twt <- twt %>%
+  left_join(
+    twt %>%
+      group_by(writer) %>%
+      summarize(n = n_distinct(tweet_id)) %>%
+      arrange(desc(n)) %>%
+      head(10) %>%
+      select(writer) %>%
+      mutate(top_10 = 1) %>%
+      {t10 <<- .}
+    , by = "writer"
+  ) %>%
+  mutate(
+    top_10 = ifelse(is.na(top_10),0,1)
+  )
 
-twt%>%
-  arrange(desc(like_num))
-# apply(a,2,max)  
-#   
-#   
-#   arrange(desc(y2019))%>%
-#   colMaxs()
-tail(a$y2015[order(a$y2015)],10)
-tail(a$y2016[order(a$y2016)],10)
-tail(a$y2017[order(a$y2017)],10)
-tail(a$y2018[order(a$y2018)],10)
-tail(a$y2019[order(a$y2019)],10)
-
-test<-twt%>%
-  mutate(elonmusk=ifelse(grepl("elon", body, ignore.case=TRUE),1,0),
-         trump=ifelse(grepl("trump", body, ignore.case=TRUE),1,0))
-
-
-a<-twt%>%
-  arrange(desc(like_num))%>%
-  head(100)%>%
-  mutate(post_year=year(post_date))
-table(a$post_year)
-
-table(test$elonmusk)
+twt %>%
+  mutate(
+    writer_10 = ifelse(top_10 == 1, writer, NA),
+    post_date_x = as.Date(format(post_date, "%Y-%m-01"))
+    ) %>%
+  group_by(writer_10, post_date_x) %>%
+  summarize(tweet_ct = n_distinct(tweet_id), .groups="drop") %>%
+  ggplot(aes(x = post_date_x)) +
+  geom_bar(
+    aes(fill = writer_10, y = tweet_ct),
+    position = position_stack(reverse = TRUE), stat = "identity"
+    ) +
+  scale_fill_discrete(name = "Top 10 Users", labels = c(sort(t10$writer), "Not Top 10")) +
+  scale_y_continuous(labels = function(x) {format(x, big.mark=",")}) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%y\n%b", limits = c(as.Date("2014-11-01"), NA)) +
+  labs(
+    title = "Tweet Count by Top 10 Users",
+    x = "Year Month",
+    y = "Tweet Count"
+    ) + 
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5))
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- ```{r} -->
-<!-- twt_w %>% -->
-<!--   group_by(tweet_ct_m) %>% -->
-<!--   summarize(total_tweet_ct = sum(tweet_ct), -->
-<!--             total_comments = sum(comment_num), -->
-<!--             total_likes = sum(like_num), -->
-<!--             total_retweet = sum(retweet_num)) -->
-
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- ```{r} -->
-<!-- tp100_twtct<-twt_w %>% -->
-<!--   select( writer , tweet_ct ) %>% -->
-<!--   mutate( percent_of_total = tweet_ct / sum( twt_w$tweet_ct ) ) %>% -->
-<!--   arrange( desc ( tweet_ct ) ) %>% -->
-<!--   head(100) -->
-
-<!-- tp100_cmtct<-twt_w %>% -->
-<!--   select( writer , comment_num ) %>% -->
-<!--   mutate( percent_of_total = comment_num / sum( twt_w$comment_num ) ) %>% -->
-<!--   arrange( desc ( comment_num ) ) %>% -->
-<!--   head(100) -->
-
-<!-- tp100_rtct<-twt_w %>% -->
-<!--   select( writer , retweet_num ) %>% -->
-<!--   mutate( percent_of_total = retweet_num / sum( twt_w$retweet_num ) ) %>% -->
-<!--   arrange( desc ( retweet_num) ) %>% -->
-<!--   head(100) -->
-
-<!-- tp100_lkct<-twt_w %>% -->
-<!--   select( writer , like_num ) %>% -->
-<!--   mutate( percent_of_total = like_num / sum( twt_w$like_num ) ) %>% -->
-<!--   arrange( desc ( like_num ) ) %>% -->
-<!--   head(100) -->
-
-<!-- tp100_twtct[,1:2] -->
-<!-- tp100_cmtct[,1:2] -->
-<!-- tp100_rtct[,1:2] -->
-<!-- tp100_lkct[,1:2] -->
-
-
-<!-- paste("Top 100 takes up", sprintf('%.1f%%', sum( tp100_twtct$percent_of_total ) *100 ),"of total tweets,", -->
-<!--       sprintf('%.1f%%', sum( tp100_cmtct$percent_of_total ) *100 ),"of total comments", -->
-<!--       sprintf('%.1f%%', sum( tp100_rtct$percent_of_total ) *100 ),"of total retweets", -->
-<!--       sprintf('%.1f%%', sum( tp100_lkct$percent_of_total ) *100 ),"of total likes") -->
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- ```{r} -->
-<!-- writers<-Reduce(intersect, list(tp100_twtct$writer, tp100_cmtct$writer, tp100_rtct$writer, tp100_lkct$writer)) -->
-
-<!-- twt_w%>% -->
-<!--   filter ( writer %in% writers ) %>% -->
-<!--   select ( -"tweet_ct_m" ) %>% -->
-<!--   mutate ( tweet_ct = sprintf( '%.1f%%' , tweet_ct / sum( twt_w$tweet_ct ) *100 ) , -->
-<!--            comment_num = sprintf( '%.1f%%' , comment_num / sum( twt_w$comment_num ) *100 ) , -->
-<!--            retweet_num = sprintf( '%.1f%%' , retweet_num / sum( twt_w$retweet_num ) *100 ) ,  -->
-<!--            like_num = sprintf( '%.1f%%' , like_num / sum( twt_w$like_num ) *100 ) -->
-<!--   ) -->
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- ```{r} -->
-<!--     # tweet_ct = sapply( length( unique(tweet_id) ) ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--     #           comment_num=sapply( sum( comment_num ) ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--     #           retweet_num=sapply( sum( retweet_num ) ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--     #           like_num=sapply( sum( like_num ), function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--     #           .groups= "drop" ) -->
-
-<!-- twt_w_gg<-twt_w %>% -->
-<!--   arrange( desc ( tweet_ct ) ) %>% -->
-<!--   mutate(tweet_ct = sapply( tweet_ct ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--                comment_num=sapply( comment_num ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--                retweet_num=sapply( retweet_num ,function(x) {format(x,big.mark = ",", scientific = FALSE)}), -->
-<!--                like_num=sapply( like_num , function(x) {format(x,big.mark = ",", scientific = FALSE)})) -->
-
-<!-- table(twt_w$tweet_ct_m) -->
-
-
-<!-- twt_w %>% -->
-<!--   group_by ( ct_grp ) %>% -->
-<!--   summarize ( n = n () , .groups = "drop" ) -->
-
-
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- I intend to study the possible contributing factors to why some of these posts get attention while some of them don't. -->
-
-<!-- First, I will see if the content of the body determine the awareness (comment, like or retweet) of the tweets -->
-<!-- ```{r} -->
-<!-- print(sample(twt$body,50)) -->
-<!-- ``` -->
-<!-- Above is the list of 50 randomly chosen tweets. -->
-
-<!-- And based on this sample, let's define 5 traits by observing whether the tweet contains any links, twitter handle (mentioning other twitter user by inputting "@"), hash tag, ticker symbol, or mention any dollar amount. -->
-
-
-<!-- ```{r} -->
-<!-- twt_b<-twt%>% -->
-<!--   mutate(link=as.factor(if_else(grepl("http://",body),1,0)), -->
-<!--          handle=as.factor(if_else(grepl("@[a-z,A-Z]", body),1,0)), #would use "\\D" instead of "[a-z,A-Z]" but that includes instances that has space after "@" -->
-<!--          hash=as.factor(if_else(grepl("#[a-z,A-Z]", body),1,0)), -->
-<!-- #         tick=if_else(grepl("\\$\\D{4}", body),1,0), -->
-<!--          dollar=as.factor(if_else(grepl("\\$\\d", body),1,0)), -->
-<!--          comment=as.factor(if_else(comment_num>0,1,0)), -->
-<!--          like=as.factor(if_else(like_num>0,1,0)), -->
-<!--          retweet=as.factor(if_else(retweet_num>0,1,0)) -->
-<!--          ) -->
-
-<!-- twt_b_cor<-twt_b%>% -->
-<!--   select(link, handle, hash, tick, dollar) -->
-
-<!-- twt_b%>% -->
-<!--   gather(indic_type, val)%>% -->
-<!--   mutate(val=if_else(val==0,"No","Yes"))%>% -->
-<!--   group_by(indic_type, val)%>% -->
-<!--   summarize(n=sprintf('%.1f%%',n()*100/nrow(twt_b)), .groups="drop")%>%   -->
-<!--   pivot_wider(names_from=indic_type, values_from=n)%>% -->
-<!--   rename("Contain In Body?"=val) -->
-
-<!-- #   -->
-<!-- #   -->
-<!-- #  %>% -->
-<!-- #  -->
-<!-- # -->
-<!--  #twt_b%>% -->
-<!--  #  select(link, handle, hash, tick, dollar) %>% -->
-<!--  #  cor() -->
-<!--  #   -->
-<!--  #   -->
-<!--  #  gather(char_type, indicator)%>% -->
-<!-- # cor ( char_type, indicator ) -->
-<!-- #(twt_b_cor) -->
-<!-- ``` -->
-
-<!-- This table represents the proportion of tweets that contains the corresponding traits.  -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- First, I will apply the correlation matrix on this table and check for multicollinearity between these variables. -->
-
-<!-- Variables with absolute value correlation coefficient greater than 0.7 will be deemed as multicollinear. -->
-
-<!-- ```{r} -->
-<!-- cor(twt_b_cor) -->
-<!-- #pairs(twt_b_cor) -->
-<!-- ``` -->
-
-<!-- Since none of the coefficients exceeds 0.7, all of the variables will be used in the analysis. -->
-
-<!-- ```{r result=hold} -->
-<!-- twt_b_lm<-twt_b%>% -->
-<!--   select(comment, like, retweet, link, handle, hash,  -->
-<!--          #tick,  -->
-<!--          dollar) -->
-
-
-<!-- twt_b_lm%>% -->
-<!-- #  select(-"Class")%>% -->
-<!--   gather(indic_type, val)%>% -->
-<!--   mutate(val=if_else(val==0,"No","Yes"))%>% -->
-<!--   group_by(indic_type, val)%>% -->
-<!--   summarize(n=sprintf('%.1f%%',n()*100/nrow(twt_b_lm)), .groups="drop")%>%   -->
-<!--   pivot_wider(names_from=indic_type, values_from=n)%>% -->
-<!--   rename("Contain In Body?"=val) -->
-
-
-<!-- twt_c_lm<-twt_b_lm%>% -->
-<!--   select(-one_of("like","retweet")) -->
-<!-- twt_l_lm<-twt_b_lm%>% -->
-<!--   select(-one_of("comment","retweet")) -->
-<!-- twt_t_lm<-twt_b_lm%>% -->
-<!--   select(-one_of("comment","like")) -->
-<!-- ``` -->
-
-
-
-<!-- ```{r} -->
-<!-- set.seed(1234) -->
-<!-- c_train<-createDataPartition(y=twt_c_lm$comment, p=0.8, list=FALSE) -->
-<!-- twt_c_train<-twt_c_lm[c_train,] -->
-<!-- twt_c_test<-twt_c_lm[-c_train,] -->
-
-<!-- test<-downSample(twt_c_train, twt_c_train$dollar) -->
-<!-- test%>% -->
-<!--   gather(indic_type, val)%>% -->
-<!--   mutate(val=if_else(val==0,"No","Yes"))%>% -->
-<!--   group_by(indic_type, val)%>% -->
-<!--   summarize(n=sprintf('%.1f%%',n()*100/nrow(test)), .groups="drop")%>%   -->
-<!--   pivot_wider(names_from=indic_type, values_from=n)%>% -->
-<!--   rename("Contain In Body?"=val) -->
-
-<!-- #test<-test%>% -->
-<!-- #  select(-"Class") -->
-<!-- # -->
-<!-- #twt_c_fit<-train(comment~., data=test, method="rf",  -->
-<!-- #                 trControl=trainControl( -->
-<!-- #                   method="cv", -->
-<!-- #                   number = 10) -->
-<!-- #                 ) -->
-<!-- # -->
-<!-- #twt_c_fit -->
-<!-- # -->
-<!-- # -->
-<!-- #summary(glm(data=twt_c_lm, comment ~ . , family=binomial)) -->
-<!-- #1-pchisq(3061602-2686863, 3717963-3717958) -->
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!--  # -->
-<!--  #the hourly distribution of the tweet update. -->
-<!--  # -->
-<!--  #I will like to check if the posted hour affect whether the tweet will get likes, comments or retweeted.  -->
-<!--  # -->
-<!--  #Let's define tweets that has been liked, commented or retweeted as having awareness. -->
-<!--  #```{r} -->
-<!--  #twt.p1<-twt%>% -->
-<!--  #  mutate(aware=if_else((comment_num+like_num+retweet_num)==0,"no_awareness","yes_awareness"))%>% -->
-<!--  #  group_by(hour(post_datetime), aware)%>% -->
-<!--  #  summarize(tweet_ct=n(), .groups='drop')%>% -->
-<!--  #  rename(post_hour="hour(post_datetime)") -->
-<!--  #   -->
-<!--  #twt.p1<-twt.p1%>% -->
-<!--  #  mutate(aware="total")%>% -->
-<!--  #  group_by(post_hour, aware)%>% -->
-<!--  #  summarize(tweet_ct=sum(tweet_ct), .groups="drop")%>% -->
-<!--  #  rbind(twt.p1) -->
-<!--  # -->
-<!--  #p1<-ggplot(twt.p1, aes(x=post_hour, y=tweet_ct, group=aware))+ -->
-<!--  #  geom_line(aes(color=aware, linetype=aware), size=0.6)+ -->
-<!--  #  geom_point(aes(color=aware, shape=aware), size=2)+ -->
-<!--  #  scale_color_manual(values=c(total="#9B59B6", no_awareness="#E74C3C", yes_awareness="#3498DB"))+ -->
-<!--  #  scale_linetype_manual(values=c(total="solid", no_awareness="dotted", yes_awareness="dotted"))+ -->
-<!--  #  scale_shape_manual(values=c(total=19, no_awareness=15, yes_awareness=17))+ -->
-<!--  #  theme( -->
-<!--  #    panel.background=element_rect(fill="white", color="gray", size=0.7), -->
-<!--  #    panel.grid.major.y=element_line(size=0.25, color="gray", linetype="dotted"), -->
-<!--  #    panel.grid.major.x=element_line(size=0.25, color="gray", linetype="dotted"), -->
-<!--  #    panel.grid.minor.x=element_line(size=0.25, color="gray", linetype="dotted"), -->
-<!--  #    axis.title=element_text(size=10), -->
-<!--  #    plot.title=element_text(size=14, hjust=0.5, face="bold"), -->
-<!--  #    legend.title=element_blank(), -->
-<!--  #    legend.justification = "top" -->
-<!--  #  ) + -->
-<!--  #  scale_x_continuous(minor_breaks=c(0:23)) + -->
-<!--  #  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}, n.breaks = 10) + -->
-<!--  #  labs(title="Hourly Distribution of Tweets by Awareness", x="Hour", y="Number of Tweets") -->
-<!--  #p1 -->
-<!--  # -->
-<!--  # -->
-<!--  #a<-pivot_wider(twt.p1, id_cols=post_hour, names_from=aware, values_from = tweet_ct) -->
-<!--  #a<-a%>% -->
-<!--  #  mutate(no_awareness=no_awareness/total, -->
-<!--  #  yes_awareness=yes_awareness/total)%>% -->
-<!--  #  select(post_hour,no_awareness, yes_awareness)%>% -->
-<!--  #  pivot_longer(!post_hour, names_to="aware", values_to="prop") -->
-<!--  #ggplot(a, aes(x=post_hour, y=prop, group=aware))+geom_line() -->
-<!--  #  -->
-<!--  #``` -->
-<!--  #According to the graph above, all three lines share the same shape. -->
-<!--  # -->
-<!--  #This signifies that posted hour is not correlated to awareness. -->
-<!--  # -->
-<!--  #This hypothesis can be tested by performing the correlation test (calculating Pearson's correlation coefficient and testing the  #hypothesis of significant correlation) -->
-<!--  # -->
-<!--  #```{r} -->
-<!--  #cor1<-twt%>% -->
-<!--  #  mutate(post_hour=hour(post_datetime), -->
-<!--  #         aware=if_else(comment_num+like_num+retweet_num>0,0,1))%>% -->
-<!--  #  select(post_hour, aware) -->
-<!--  # -->
-<!--  #cor.test(cor1$post_hour, cor1$aware, method="spearman") -->
-<!--  #``` -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  #if it is correlated whether the tweet has been commented, liked, or retweeted. -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  #Next, I will perform general analysis on the content of the tweets. -->
-<!--  #```{r} -->
-<!--  #twt$body_len=sapply( -->
-<!--  #  lapply( -->
-<!--  #    strsplit(twt$body," ") #splitting strings by " " -->
-<!--  #         , function(x){x[!x==""]}) #using lapply to delete blank elements -->
-<!--  #  , length) #counting the number of elements in the list. -->
-<!--  #summary(twt$body_len) -->
-<!--  # -->
-<!--  #a<-twt%>% -->
-<!--  #  arrange(desc(twt$body_len))%>% -->
-<!--  #  head(100) -->
-<!--  #``` -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  #```{r} -->
-<!--  #  #group_by(Referred_Company_Count) %>% -->
-<!--  #  #summarize(n_occurrence=count(Referred_Company_Count)) -->
-<!--  #  #arrange(desc(Referred_Company_Count)) %>% #sort(Referred_Company_Count, decreasing=TRUE) %>% -->
-<!--  #  #head(20) -->
-<!--  #test<-twt%>% -->
-<!--  #  filter(post_date=="") -->
-<!--  #``` -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
-<!--  # -->
+Indeed, the Top 10 user posted unusual amount of tweets between Jan 2016 - Sept 2017.
+
+&nbsp;
+
+### 2. Combined Datasets
+
+&nbsp;
+
+#### a) Company_Tweet & Tweet
+
+&nbsp;
+
+I will combine the Company Tweet Dataset with the Tweet Dataset and continue with the analysis.
+
+Let's first look into the distribution of tweets over time for each companies.
+
+```{r fig.dim=c(12,28), message=FALSE, warning=FALSE}
+twt_n_cmpy <- twt %>%
+  left_join(twt_to_cmpy, by = "tweet_id")
+
+facet_label<-c(
+  "Z" = "Total",
+  "AAPL" = "AAPL",
+  "GOOG" = "GOOG",
+  "GOOGL" = "GOOGL",
+  "AMZN" = "AMZN",
+  "MSFT" = "MSFT",
+  "TSLA" = "TSLA"
+)
+
+twt_n_cmpy %>%
+  mutate(post_date_x = as.Date(format(post_date, "%Y-%m-01"))) %>%
+  group_by(post_date_x, ticker_symbol) %>%
+  summarize(
+    tweet_ct = n_distinct(tweet_id),
+    yescomment_ct = length(yesno_comment[yesno_comment == 1]),
+    yesretweet_ct = length(yesno_retweet[yesno_retweet == 1]),
+    yeslike_ct = length(yesno_like[yesno_like == 1]),
+    .groups = "drop"
+    ) %>%
+  rbind(
+    # to have "total" facet_grid 
+    twt_n_cmpy %>%
+    mutate(post_date_x = as.Date(format(post_date, "%Y-%m-01")),
+           ticker_symbol = "Z") %>% #named "Z" so that it can be placed on the bottom
+    group_by(post_date_x, ticker_symbol) %>%
+    summarize(
+      tweet_ct = n_distinct(tweet_id),
+      yescomment_ct = length(yesno_comment[yesno_comment == 1]),
+      yesretweet_ct = length(yesno_retweet[yesno_retweet == 1]),
+      yeslike_ct = length(yesno_like[yesno_like == 1]),
+      .groups = "drop"
+      )
+  ) %>%
+  ggplot(aes(x = post_date_x, group = ticker_symbol)) +
+  geom_col(aes(y = tweet_ct, fill = "Total Tweets"), color = "lightgrey") +
+#lines
+  geom_line(aes(y = yescomment_ct, color = "Have Comments"), size = 1) +
+  geom_line(aes(y = yesretweet_ct, color = "Retweeted") , size = 1) +
+  geom_line(aes(y = yeslike_ct, color = "Have Likes"), size = 1) +
+#trendline
+  geom_smooth(aes(y = tweet_ct, color = "black"), method = "lm", se = FALSE, linetype = "dashed", size=0.5) +
+  geom_smooth(aes(y = yescomment_ct, color = "Have Comments"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+  geom_smooth(aes(y = yesretweet_ct, color = "Retweeted"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+  geom_smooth(aes(y = yeslike_ct, color = "Have Likes"), method = "lm", se = FALSE, linetype = "dashed", size = 0.5) +
+#r2
+  stat_regline_equation(
+    aes(y = tweet_ct, label = ..eq.label..),
+    label.x.npc = 0.90, label.y.npc = 1, size = 3.5
+    ) +
+  stat_regline_equation(
+    aes(y = yeslike_ct, label = ..eq.label.., color = "Have Likes"),
+    label.x.npc = 0.90, label.y.npc = 0.95, size = 3.5, show.legend = FALSE
+    ) +
+  stat_regline_equation(
+    aes(y = yesretweet_ct, label = ..eq.label.., color = "Retweeted"),
+    label.x.npc = 0.90, label.y.npc = 0.9, size = 3.5, show.legend = FALSE
+    ) +
+  stat_regline_equation(
+    aes(y = yescomment_ct, label = ..eq.label.., color = "Have Comments"),
+    label.x.npc = 0.90, label.y.npc = 0.85, size = 3.5, show.legend = FALSE
+    ) +
+  facet_grid(ticker_symbol ~ ., scales = "free", labeller = function(variable, value) {return(facet_label[value])}) +
+  labs(
+    title = "Distribution of Tweets over Time",
+        y = "Number of Tweets", 
+        x = "Year Month", 
+     fill = "Legend", 
+    color = NULL
+    ) +
+  scale_fill_manual(values = c("Total Tweets" = "white")) +
+  scale_color_manual(values = colors) +
+  scale_y_continuous(labels = function(x) {format(x, big.mark = ",", scientific = FALSE)})+
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5))
+```
+
+It is interesting to note that AMZN and TSLA are the only ones with positive growth in tweet counts over and they both had an exponential growth in stock prices.
+
+I'd also like to check the proportion of the top 10 users for each companies' total tweets.
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE}
+twt_n_cmpy %>%
+  rbind(
+    twt_n_cmpy %>%
+      mutate(ticker_symbol = "Z")
+  ) %>%
+  mutate(
+    writer_10 = ifelse(top_10 == 1, writer, NA),
+    post_date_x = as.Date(format(post_date, "%Y-%m-01"))
+    ) %>%
+  group_by(writer_10, post_date_x, ticker_symbol) %>%
+  summarize(tweet_ct = n_distinct(tweet_id), .groups="drop") %>%
+  ggplot(aes(x = post_date_x)) +
+  geom_bar(
+    aes(fill = writer_10, y = tweet_ct),
+    position = position_stack(reverse = TRUE), stat = "identity"
+    ) +
+  scale_fill_discrete(name = "Top 10 Users", labels = c(sort(t10$writer), "Not Top 10")) +
+  scale_y_continuous(labels = function(x) {format(x, big.mark=",")}) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%y\n%b", limits = c(as.Date("2014-11-01"), NA)) +
+  labs(
+    title = "Tweet Count by Top 10 Users",
+    x = "Year Month",
+    y = "Tweet Count"
+    ) + 
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5)) +
+  facet_grid(ticker_symbol ~ ., scales = "free", labeller = function(variable, value) {return(facet_label[value])})
+```
+
+Every companies except GOOGL and TSLA are afflicted by the top 10 users.
+
+For some month, they represents more than 50% of the uploaded tweets.
+
+&nbsp;
+
+#### b) All Datasets Combined
+
+&nbsp;
+
+I will now test if there are any correlation between tweet counts against close value and traded volume.
+
+And I will see if excluding the top 10 users affect the correlation.
+
+&nbsp;
+
+##### Close Value VS Tweet Counts
+
+&nbsp;
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE, results = "hold"}
+m_twt <- twt_n_cmpy %>%
+  mutate(top_10 = 1) %>%
+  rbind(
+    twt_n_cmpy %>%
+      filter(top_10 == 0) %>%
+      mutate(top_10 = 0)
+  ) %>%
+  group_by(post_date, ticker_symbol, top_10) %>%
+  summarize(
+    tweet_ct = n_distinct(tweet_id),
+    writer_ct = n_distinct(writer),
+    .groups = "drop"
+    ) %>%
+  left_join(
+    stk, by = c("post_date" = "day_date", "ticker_symbol" = "ticker_symbol")
+  )
+
+m_twt %>%
+  mutate(top_10 = ifelse(top_10 == 1, "With Top 10", "Without Top 10")) %>%
+  group_by(ticker_symbol) %>%
+  mutate(cval_c = sum(tweet_ct) / sum(close_value)) %>%
+  ggplot(aes(x = post_date)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet Count")) +
+  geom_line(aes(y = close_value * cval_c, color = "Close Value $")) + 
+#max close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(close_value == max(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, #label y location
+        label = paste("$", format(close_value, big.mark = ",", scientific = FALSE), sep = "")),
+    hjust = 0.7, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.5
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (close_value == max(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, color = "Max Close Value $")
+  ) +
+#min close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(close_value == min(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, #label y location
+        label = paste("$", format(close_value, big.mark = ",", scientific = FALSE), sep = "")),
+    hjust = 0.3, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.5
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (close_value == min(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, color = "Min Close Value $")
+  ) +
+  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}) +
+  scale_color_manual(values = c("Tweet Count" = "dodgerblue", "Close Value $" = "darkgreen", "Max Close Value $" = "red", "Min Close Value $" = "blue")) +
+  facet_grid(rows = vars(ticker_symbol), cols = vars(top_10), scales = "free") +
+  labs(
+    title = "Tweet Counts VS Close Value",
+    x = "Year Month",
+    y = "Tweet Counts",
+    color = "Legend"
+  ) + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "top"
+    )
+
+c_color <- function(x) {
+  neg <- scales::col_numeric(
+    palette = c("#E74C3C", "#FDEDEC"),
+    domain = c(-1, -0.3),
+    na.color = "white"
+  )
+  pos <- scales::col_numeric(
+    palette = c("#E9F7EF","#27AE60"),
+    domain = c(0.3, 1),
+    na.color = "white"
+  )
+  ifelse(x>0, pos(x), neg(x))
+}
+
+m_twt %>%
+  group_by(ticker_symbol, top_10) %>%
+  summarize(
+    correlation = cor.test(tweet_ct, close_value)$estimate,
+    p_value = cor.test(tweet_ct, close_value)$p.value,
+    .groups = "drop"
+    ) %>%
+  pivot_wider(names_from = top_10, values_from = c(correlation, p_value)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "With Top 10",
+    columns = c(correlation_1, p_value_1)
+  ) %>%
+  tab_spanner(
+    label = "Without Top 10",
+    columns = c(correlation_0, p_value_0)
+  ) %>%
+  data_color(
+    columns = 2:3, colors = c_color
+  ) %>%
+  tab_header(
+    title = "Pearson Correlation Test - Tweet Counts VS Close Value"
+  ) %>%
+  cols_label(
+    ticker_symbol = "Company",
+    correlation_0 = "cor. coef.",
+    p_value_0 = "p value",
+    correlation_1 = "cor. coef.",
+    p_value_1 = "p value"
+  )
+```
+
+AMZN and GOOGL are the only companies that improved in correlation by removing the top 10 users.
+
+Meaning, top 10 users had not much affect in finding association between tweet counts and close values.
+
+Not only that, the correlation coefficients indicated insignificance for every companies except GOOG.
+
+&nbsp;
+
+##### Traded Volume VS Tweet Counts
+
+&nbsp;
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE, results = "hold"}
+m_twt %>%
+  mutate(top_10 = ifelse(top_10 == 1, "With Top 10", "Without Top 10")) %>%
+  group_by(ticker_symbol) %>%
+  mutate(vol_c = sum(tweet_ct) / sum(volume)) %>%
+  ggplot(aes(x = post_date)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet Count")) +
+  geom_line(aes(y = volume * vol_c, color = "Traded Volume")) + 
+#max close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(volume == max(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, #label y location
+        label = format(volume, big.mark = ",", scientific = FALSE)),
+    hjust = 0.2, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (volume == max(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, color = "Max Trade Volume")
+  ) +
+#min close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter( volume== min(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, #label y location
+        label = format(volume, big.mark = ",", scientific = FALSE)),
+    hjust = 0.7, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (volume == min(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, color = "Min Trade Volume")
+  ) +
+  scale_color_manual(values = c("Tweet Count" = "dodgerblue", "Traded Volume" = "darkred", "Max Trade Volume" = "red", "Min Trade Volume" = "blue")) +
+  facet_grid(rows = vars(ticker_symbol),  cols = vars(top_10), scales = "free") +
+  labs(
+    title = "Tweet Counts VS Traded Volume",
+    x = "Year Month",
+    y = "Tweet Counts",
+    color = "Legend"
+  ) + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "top"
+    )
+
+m_twt %>%
+  group_by(ticker_symbol, top_10) %>%
+  summarize(
+    correlation = cor.test(tweet_ct, volume)$estimate,
+    p_value = cor.test(tweet_ct, volume)$p.value,
+    .groups = "drop"
+    ) %>%
+  pivot_wider(names_from = top_10, values_from = c(correlation, p_value)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "With Top 10",
+    columns = c(correlation_1, p_value_1)
+  ) %>%
+  tab_spanner(
+    label = "Without Top 10",
+    columns = c(correlation_0, p_value_0)
+  ) %>%
+  data_color(
+    columns = 2:3, colors = c_color
+  ) %>%
+  tab_header(
+    title = "Pearson Correlation Test - Tweet Counts VS Traded Volume"
+  ) %>%
+  cols_label(
+    ticker_symbol = "Company",
+    correlation_0 = "cor. coef.",
+    p_value_0 = "p value",
+    correlation_1 = "cor. coef.",
+    p_value_1 = "p value"
+  )
+```
+
+For Volume VS Tweet Count, the correlation improved overall without the top_10.
+
+With the top 10, every companies except GOOG and MSFT showed moderate correlation.
+
+Without, MSFT is the only company that has a weak correlation.
+
+Now, I'd like to compare whether mult_tag and reg_user columns will affect the correlation.
+
+&nbsp;
+
+##### mult_tag Column (Mult. Tag := Tweets with Multiple Companies Tag, Single Tag := Tweets with Single Company Tag)
+
+&nbsp;
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE, results = "hold"}
+m_twt_m <- twt_n_cmpy %>%
+  group_by(post_date, ticker_symbol, mult_tag) %>%
+  summarize(
+    tweet_ct = n_distinct(tweet_id),
+    writer_ct = n_distinct(writer),
+    .groups = "drop"
+    ) %>%
+  left_join(
+    stk, by = c("post_date" = "day_date", "ticker_symbol" = "ticker_symbol")
+  )
+
+m_twt_m %>%
+  mutate(mult_tag = ifelse(mult_tag == 1, "Mult. Tag", "Single Tag")) %>%
+  group_by(ticker_symbol) %>%
+  mutate(cval_c = sum(tweet_ct) / sum(close_value)) %>%
+  ggplot(aes(x = post_date)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet Count")) +
+  geom_line(aes(y = close_value * cval_c, color = "Close Value $")) + 
+#max close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(close_value == max(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, #label y location
+        label = paste("$", format(close_value, big.mark = ",", scientific = FALSE), sep = "")),
+    hjust = 0.7, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.5
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (close_value == max(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, color = "Max Close Value $")
+  ) +
+#min close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(close_value == min(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, #label y location
+        label = paste("$", format(close_value, big.mark = ",", scientific = FALSE), sep = "")),
+    hjust = 0.3, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.5
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (close_value == min(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, color = "Min Close Value $")
+  ) +
+  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}) +
+  scale_color_manual(values = c("Tweet Count" = "dodgerblue", "Close Value $" = "darkgreen", "Max Close Value $" = "red", "Min Close Value $" = "blue")) +
+  facet_grid(rows = vars(ticker_symbol), cols = vars(mult_tag), scales = "free") +
+  labs(
+    title = "Tweet Counts VS Close Value (by mult_tag)",
+    x = "Year Month",
+    y = "Tweet Counts",
+    color = "Legend"
+  ) + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "top"
+    )
+
+m_twt_m %>%
+  group_by(ticker_symbol, mult_tag) %>%
+  summarize(
+    correlation = cor.test(tweet_ct, close_value)$estimate,
+    p_value = cor.test(tweet_ct, close_value)$p.value,
+    .groups = "drop") %>%
+  pivot_wider(names_from = mult_tag, values_from = c(correlation, p_value)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Multiple Tag",
+    columns = c(correlation_1, p_value_1)
+  ) %>%
+  tab_spanner(
+    label = "Single Tag",
+    columns = c(correlation_0, p_value_0)
+  ) %>%
+  tab_header(
+    title = "Pearson Correlation Test - Tweet Counts VS Close Value (by mult_tag)"
+  )%>%
+  data_color(columns = 2:3, colors = c_color) %>%
+  cols_label(
+    ticker_symbol = "Company",
+    correlation_0 = "cor. coef.",
+    p_value_0 = "p value",
+    correlation_1 = "cor. coef.",
+    p_value_1 = "p value"
+  )
+```
+
+Compared to the original, correlation for single tagged data showed stronger correlation for all companies except for AMZN.
+
+It could be that only considering the single tagged tweets to find the association with the close value is more beneficial.
+
+Although, AMZN seems to have the highest correlation coefficient value when only the multi-tagged tweets were considered.
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE, results = "hold"}
+m_twt_m %>%
+  mutate(mult_tag = ifelse(mult_tag == 1, "Mult. Tag", "Single Tag")) %>%
+  group_by(ticker_symbol) %>%
+  mutate(vol_c = sum(tweet_ct) / sum(volume)) %>%
+  ggplot(aes(x = post_date)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet Count")) +
+  geom_line(aes(y = volume * vol_c, color = "Traded Volume")) + 
+#max close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(volume == max(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, #label y location
+        label = format(volume, big.mark = ",", scientific = FALSE)),
+    hjust = 0.2, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (volume == max(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, color = "Max Trade Volume")
+  ) +
+#min close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter( volume== min(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, #label y location
+        label = format(volume, big.mark = ",", scientific = FALSE)),
+    hjust = 0.7, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (volume == min(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, color = "Min Trade Volume")
+  ) +
+  scale_color_manual(values = c("Tweet Count" = "dodgerblue", "Traded Volume" = "darkred", "Max Trade Volume" = "red", "Min Trade Volume" = "blue")) +
+  facet_grid(rows = vars(ticker_symbol), cols = vars(mult_tag), scales = "free") +
+  labs(
+    title = "Tweet Counts VS Traded Volume (by mult_tag)",
+    x = "Year Month",
+    y = "Tweet Counts",
+    color = "Legend"
+  ) + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "top"
+    )
+
+m_twt_m %>%
+  group_by(ticker_symbol, mult_tag) %>%
+  summarize(
+    correlation = cor.test(tweet_ct, volume)$estimate,
+    p_value = cor.test(tweet_ct, volume)$p.value,
+    .groups = "drop") %>%
+  pivot_wider(names_from = mult_tag, values_from = c(correlation, p_value)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Multiple Tag",
+    columns = c(correlation_1, p_value_1)
+  ) %>%
+  tab_spanner(
+    label = "Single Tag",
+    columns = c(correlation_0, p_value_0)
+  ) %>%
+  tab_header(
+    title = "Pearson Correlation Test - Tweet Counts VS Traded Volume (by mult_tag)"
+  )%>%
+  data_color(columns = 2:3, colors = c_color) %>%
+  cols_label(
+    ticker_symbol = "Company",
+    correlation_0 = "cor. coef.",
+    p_value_0 = "p value",
+    correlation_1 = "cor. coef.",
+    p_value_1 = "p value"
+  )
+
+```
+
+Compared to the original, neither of the tags improved the correlation compared to the original.
+
+It stayed overall consistent when for the Single Tag. 
+
+But for the multi-tagged, the companies that showed weaker correlation originally (cor less than 0.3, like GOOG, and MSFT) showed slightly stronger correlation.
+
+&nbsp;
+
+##### reg_user Column (Reg := Posted More Than 1 Tweet, Irreg := Posted a Single Tweet)
+
+&nbsp;
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE, results = "hold"}
+m_twt_r <- twt_n_cmpy %>%
+  group_by(post_date, ticker_symbol, reg_user) %>%
+  summarize(
+    tweet_ct = n_distinct(tweet_id),
+    writer_ct = n_distinct(writer),
+    .groups = "drop"
+    ) %>%
+  left_join(
+    stk, by = c("post_date" = "day_date", "ticker_symbol" = "ticker_symbol")
+  )
+
+m_twt_r %>%
+  mutate(reg_user = ifelse(reg_user == 1, "Reg", "Irreg")) %>%
+  group_by(ticker_symbol) %>%
+  mutate(cval_c = sum(tweet_ct) / sum(close_value)) %>%
+  ggplot(aes(x = post_date)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet Count")) +
+  geom_line(aes(y = close_value * cval_c, color = "Close Value $")) + 
+#max close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(close_value == max(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, #label y location
+        label = paste("$", format(close_value, big.mark = ",", scientific = FALSE), sep = "")),
+    hjust = 0.7, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.5
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (close_value == max(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, color = "Max Close Value $")
+  ) +
+#min close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(close_value == min(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, #label y location
+        label = paste("$", format(close_value, big.mark = ",", scientific = FALSE), sep = "")),
+    hjust = 0.3, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.5
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (close_value == min(close_value)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = close_value * cval_c, color = "Min Close Value $")
+  ) +
+  scale_y_continuous(labels=function(x) {format(x,big.mark = ",", scientific = FALSE)}) +
+  scale_color_manual(values = c("Tweet Count" = "dodgerblue", "Close Value $" = "darkgreen", "Max Close Value $" = "red", "Min Close Value $" = "blue")) +
+  facet_grid(rows = vars(ticker_symbol), cols = vars(reg_user), scales = "free") +
+  labs(
+    title = "Tweet Counts VS Close Value (by reg_user)",
+    x = "Year Month",
+    y = "Tweet Counts",
+    color = "Legend"
+  ) + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "top"
+    )
+
+m_twt_r %>%
+  group_by(ticker_symbol, reg_user) %>%
+  summarize(
+    correlation = cor.test(tweet_ct, close_value)$estimate,
+    p_value = cor.test(tweet_ct, close_value)$p.value,
+    .groups = "drop") %>%
+  pivot_wider(names_from = reg_user, values_from = c(correlation, p_value)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Regular User",
+    columns = c(correlation_1, p_value_1)
+  ) %>%
+  tab_spanner(
+    label = "Irregular User",
+    columns = c(correlation_0, p_value_0)
+  ) %>%
+  tab_header(
+    title = "Pearson Correlation Test - Tweet Counts VS Close Value (by reg_user)"
+  )%>%
+  data_color(columns = 2:3, colors = c_color) %>%
+  cols_label(
+    ticker_symbol = "Company",
+    correlation_0 = "cor. coef.",
+    p_value_0 = "p value",
+    correlation_1 = "cor. coef.",
+    p_value_1 = "p value"
+  )
+```
+
+For Tweet Counts VS Close Value, Reg tag seems to not affect the correlation when compared to the original.
+
+And the Irreg tag has lowered the correlation for every companies except for TSLA which has increased slightly bit. 
+
+```{r fig.dim=c(12,18), message=FALSE, warning=FALSE, results = "hold"}
+m_twt_r %>%
+  mutate(reg_user = ifelse(reg_user == 1, "Reg", "Irreg")) %>%
+  group_by(ticker_symbol) %>%
+  mutate(vol_c = sum(tweet_ct) / sum(volume)) %>%
+  ggplot(aes(x = post_date)) + 
+  geom_line(aes(y = tweet_ct, color = "Tweet Count")) +
+  geom_line(aes(y = volume * vol_c, color = "Traded Volume")) + 
+#max close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter(volume == max(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, #label y location
+        label = format(volume, big.mark = ",", scientific = FALSE)),
+    hjust = 0.2, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (volume == max(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, color = "Max Trade Volume")
+  ) +
+#min close_value label
+  geom_label(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter( volume== min(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, #label y location
+        label = format(volume, big.mark = ",", scientific = FALSE)),
+    hjust = 0.7, vjust = -0.2,
+    label.size = NA,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = . %>%
+      group_by(ticker_symbol) %>%
+      filter (volume == min(volume)) %>%
+      filter(post_date == min(post_date)),
+    aes(y = volume * vol_c, color = "Min Trade Volume")
+  ) +
+  scale_color_manual(values = c("Tweet Count" = "dodgerblue", "Traded Volume" = "darkred", "Max Trade Volume" = "red", "Min Trade Volume" = "blue")) +
+  facet_grid(rows = vars(ticker_symbol), cols = vars(reg_user), scales = "free") +
+  labs(
+    title = "Tweet Counts VS Traded Volume (by reg_user)",
+    x = "Year Month",
+    y = "Tweet Counts",
+    color = "Legend"
+  ) + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.position = "top"
+    )
+
+m_twt_r %>%
+  group_by(ticker_symbol, reg_user) %>%
+  summarize(
+    correlation = cor.test(tweet_ct, volume)$estimate,
+    p_value = cor.test(tweet_ct, volume)$p.value,
+    .groups = "drop") %>%
+  pivot_wider(names_from = reg_user, values_from = c(correlation, p_value)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Regular User",
+    columns = c(correlation_1, p_value_1)
+  ) %>%
+  tab_spanner(
+    label = "Irregular User",
+    columns = c(correlation_0, p_value_0)
+  ) %>%
+  tab_header(
+    title = "Pearson Correlation Test - Tweet Counts VS Traded Volume (by reg_user)"
+  )%>%
+  data_color(columns = 2:3, colors = c_color) %>%
+  cols_label(
+    ticker_symbol = "Company",
+    correlation_0 = "cor. coef.",
+    p_value_0 = "p value",
+    correlation_1 = "cor. coef.",
+    p_value_1 = "p value"
+  )
+
+```
+
+Correlation for Traded Volume VS Tweet Count stayed consistent with the tag as well.
+
+And just as result above, Irreg has lowered the correlation for every companies except for MSFT.
+
+&nbsp;
+
+# Conclusion
+
+&nbsp;
+
+Through the analysis, we were able to identify some association between the daily traded volume and the tweet counts for all companies except for MSFT and GOOG.
+
+Also, dividing the tweets by mult_tag and reg_user did not improve on the correlation, although the Single Tag and Regular User resulted in similar values from the original.
+
+As for the close value and tweet counts, AAPL and GOOG are the only companies that showed any significant association. 
+
+Comparing to the single tagged tweets increased the correlation, but only slightly where most of them were still considered insignificant. 
+
+&nbsp;
+&nbsp;
