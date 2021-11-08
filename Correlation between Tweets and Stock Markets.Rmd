@@ -129,7 +129,7 @@ According to the above result, tweets can be related to multiple companies at a 
 
 Also, the data set should have `r format(sum(rf_cmpy$com_ct*rf_cmpy$n), big.mark=",")` rows but the table actually has `r format(nrow(twt_to_cmpy),big.mark=",")`.
 
-This means some rows are duplicated and that needs to be eliminated. 
+This means some rows are duplicated and that needs to be eliminated.
 
 ```{r}
 twt_to_cmpy <- unique(twt_to_cmpy)
