@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r message=FALSE, warning=FALSE, include=FALSE, echo=FALSE}
-mymachine <- "/Users/jungsoolee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
+mymachine <- "/Users/amylee/Documents/Git/Effect\ of\ tweets\ on\ stock\ prices"
 ```
 
 # Introduction
@@ -127,7 +127,7 @@ paste(
 
 According to the above result, tweets can be related to multiple companies at a time. 
 
-Also, the data set should have `r format(sum(rf_cmpy$Referred_Company_Count_per_Tweet*rf_cmpy$n_occurrence), big.mark=",")` rows but the table actually has `r format(nrow(twt_to_cmpy),big.mark=",")`.
+Also, the data set should have `r format(sum(rf_cmpy$com_ct*rf_cmpy$n), big.mark=",")` rows but the table actually has `r format(nrow(twt_to_cmpy),big.mark=",")`.
 
 This means some rows are duplicated and that needs to be eliminated.
 
